@@ -1,0 +1,51 @@
+# =========================
+# 1. Variables d'environnement & Secrets (CRITIQUE)
+# =========================
+.env
+.env.*.local
+.env.local
+*.pem
+
+# =========================
+# 2. Backend (Python / Django)
+# =========================
+# Environnements virtuels
+venv/
+env/
+ENV/
+
+# Fichiers compilés Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Base de données locale (au cas où vous testeriez avec SQLite)
+db.sqlite3
+db.sqlite3-journal
+
+# =========================
+# 3. Frontend (Node.js / React / Next.js)
+# =========================
+# Dépendances très lourdes
+node_modules/
+frontend/node_modules/
+
+# Fichiers de build Next.js
+.next/
+frontend/.next/
+out/
+build/
+dist/
+
+# Logs npm
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# =========================
+# 4. Fichiers système et éditeurs (VS Code, MacOS, etc.)
+# =========================
+.DS_Store
+.vscode/
+.idea/
+*.swp
