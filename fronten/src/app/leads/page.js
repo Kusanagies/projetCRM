@@ -5,17 +5,18 @@ import { useRouter } from 'next/navigation';
 
 export default function LeadsPipelinePage() {
   const [leads, setLeads] = useState([]);
-  const [contacts, setContacts] = useState([]); // NOUVEAU: Pour stocker les contacts
+  const [contacts, setContacts] = useState([]); // NOUVEAU : Pour stocker la liste des contacts
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
   // États pour le formulaire d'ajout
   const [showAddForm, setShowAddForm] = useState(false);
+  // NOUVEAU : Ajout de "contact: ''" dans le state initial
   const [formData, setFormData] = useState({ titre: '', statut: 'NOUVEAU', valeur_estimee: '', contact: '' });
   const [submitError, setSubmitError] = useState(null);
   const [submitSuccess, setSubmitSuccess] = useState(false);
 
-  // Fonction pour charger les données (Leads ET Contacts)
+  // Fonction pour charger les Leads ET les Contacts
   const fetchData = async () => {
     const token = localStorage.getItem('access_token');
     
@@ -25,15 +26,15 @@ export default function LeadsPipelinePage() {
     }
 
     try {
-      // 1. On charge les leads
+      // 1. Charger les Leads
       const leadsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/leads/`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      if (!leadsRes.ok) throw new Error("Erreur de session");
+      if (!leadsRes.ok) throw new Error("Session expirée");
       const leadsData = await leadsRes.json();
       setLeads(leadsData);
 
-      // 2. On charge les contacts pour le menu déroulant
+      // 2. Charger les Contacts pour le menu déroulant
       const contactsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/contacts/`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -64,8 +65,9 @@ export default function LeadsPipelinePage() {
     setSubmitError(null);
     setSubmitSuccess(false);
 
+    // Sécurité : Vérifier qu'un contact est bien sélectionné
     if (!formData.contact) {
-      setSubmitError("Veuillez sélectionner un contact.");
+      setSubmitError("Veuillez obligatoirement sélectionner un contact.");
       return;
     }
 
@@ -81,20 +83,16 @@ export default function LeadsPipelinePage() {
         body: JSON.stringify({
           titre: formData.titre,
           statut: formData.statut,
-          // Si pas de valeur, on envoie null (Django préfère ça à 0 ou vide)
           valeur_estimee: formData.valeur_estimee ? parseFloat(formData.valeur_estimee) : null,
-          contact: parseInt(formData.contact)
+          contact: parseInt(formData.contact) // NOUVEAU : On envoie l'ID du contact à Django !
         }),
       });
 
-      // MODIFICATION ICI : On lit la vraie erreur envoyée par Django
+      // Affichage du VRAI message d'erreur Django si 400 Bad Request
       if (!response.ok) {
         const errData = await response.json();
-        console.log("Erreur détaillée de Django :", errData);
-        
-        // On transforme l'objet d'erreur de Django en texte lisible
         const errorMessage = Object.keys(errData).map(key => `${key}: ${errData[key]}`).join(" | ");
-        throw new Error(`Refusé par le serveur -> ${errorMessage}`);
+        throw new Error(`Refusé par le serveur : ${errorMessage}`);
       }
 
       setSubmitSuccess(true);
@@ -160,7 +158,7 @@ export default function LeadsPipelinePage() {
                   <input type="text" name="titre" required value={formData.titre} onChange={handleAddChange} className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:border-blue-500" placeholder="Ex: Vente licences SaaS" />
                 </div>
                 
-                {/* NOUVEAU: Sélection du contact */}
+                {/* --- NOUVEAU : MENU DÉROULANT POUR LE CONTACT --- */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Contact associé *</label>
                   <select 
@@ -176,6 +174,7 @@ export default function LeadsPipelinePage() {
                     ))}
                   </select>
                 </div>
+                {/* -------------------------------------------------- */}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Valeur estimée (EUR)</label>
@@ -223,6 +222,7 @@ export default function LeadsPipelinePage() {
                     </p>
                     <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
                       <span>[Ref: #{lead.id}]</span>
+                      <span className="text-blue-500 hover:underline">[Voir]</span>
                     </div>
                   </div>
                 ))}
