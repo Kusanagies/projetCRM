@@ -29,16 +29,29 @@ export default function LeadsPipelinePage() {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!leadsRes.ok) throw new Error("Session expirée");
+      
       const leadsData = await leadsRes.json();
-      setLeads(leadsData);
+      
+      // --- CORRECTION DE SÉCURITÉ ICI ---
+      // Si l'API renvoie une pagination (avec .results), on prend les résultats.
+      // Sinon, on vérifie que c'est bien un tableau. Si ce n'est ni l'un ni l'autre, on met un tableau vide [].
+      if (Array.isArray(leadsData)) {
+        setLeads(leadsData);
+      } else if (leadsData && Array.isArray(leadsData.results)) {
+        setLeads(leadsData.results);
+      } else {
+        setLeads([]);
+      }
+      // ----------------------------------
 
       const contactsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/contacts/`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (contactsRes.ok) {
         const contactsData = await contactsRes.json();
-        setContacts(contactsData);
+        setContacts(Array.isArray(contactsData) ? contactsData : (contactsData.results || []));
       }
+      
       setLoading(false);
     } catch (err) {
       console.error("Erreur API:", err);
@@ -77,10 +90,8 @@ export default function LeadsPipelinePage() {
         }),
       });
 
-      // AFFICHAGE DE LA VRAIE ERREUR DJANGO
       if (!response.ok) {
         const errData = await response.json();
-        console.log("Erreur détaillée :", errData);
         let errorMsg = "Erreur serveur";
         if (typeof errData === 'object') {
           errorMsg = Object.entries(errData).map(([k, v]) => `${k}: ${v}`).join(" | ");
@@ -157,8 +168,14 @@ export default function LeadsPipelinePage() {
     } catch (err) { alert(err.message); }
   };
 
-  // Configuration des colonnes
-  const getLeadsByStatus = (status) => leads.filter(lead => lead.statut === status);
+  // --- CORRECTION DE SÉCURITÉ ICI AUSSI (Ligne du plantage) ---
+  // On s'assure que leads est toujours un tableau avant de filtrer
+  const getLeadsByStatus = (status) => {
+    if (!Array.isArray(leads)) return [];
+    return leads.filter(lead => lead.statut === status);
+  };
+  // ------------------------------------------------------------
+
   const colonnes = [
     { id: 'NOUVEAU', titre: 'Nouveaux prospects', couleur: 'border-blue-500' },
     { id: 'EN_COURS', titre: 'En cours', couleur: 'border-yellow-500' },
