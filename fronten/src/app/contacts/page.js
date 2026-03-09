@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function ContactsPage() {
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
   
   // États pour la création
   const [showAddForm, setShowAddForm] = useState(false);
@@ -17,20 +19,24 @@ export default function ContactsPage() {
   const [selectedContact, setSelectedContact] = useState(null);
   const [editError, setEditError] = useState(null);
 
+  // --- LECTURE DES CONTACTS ---
   const fetchContacts = () => {
-    // On récupère le badge d'accès stocké lors du login
     const token = localStorage.getItem('access_token');
+    if (!token) {
+      router.push('/login');
+      return;
+    }
 
-    fetch('http://127.0.0.1:8000/api/contacts/', {
+    fetch(`${process.env.NEXT_PUBLIC_API_URL}/contacts/`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        // On présente le badge d'accès au backend
-        'Authorization': `Bearer ${token}` 
+        'Authorization': `Bearer ${token}`
       }
     })
       .then(res => {
-        if (!res.ok) throw new Error("Non autorisé ou session expirée");
+        if (res.status === 401) throw new Error("Non autorisé");
+        if (!res.ok) throw new Error("Erreur serveur");
         return res.json();
       })
       .then(data => {
@@ -40,8 +46,10 @@ export default function ContactsPage() {
       .catch(err => {
         console.error("Erreur API:", err);
         setLoading(false);
-        // Optionnel : rediriger vers la page de login si le token est invalide
-        // window.location.href = '/login';
+        if (err.message === "Non autorisé") {
+          localStorage.removeItem('access_token');
+          router.push('/login');
+        }
       });
   };
 
@@ -49,7 +57,7 @@ export default function ContactsPage() {
     fetchContacts();
   }, []);
 
-  // --- LOGIQUE DE CRÉATION ---
+  // --- CRÉATION DE CONTACT ---
   const handleAddChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
@@ -58,17 +66,20 @@ export default function ContactsPage() {
     e.preventDefault();
     setSubmitError(null);
     setSubmitSuccess(false);
+    const token = localStorage.getItem('access_token');
 
     try {
-      const response = await fetch(process.env.NEXT_PUBLIC_API_URL + '/contacts/', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/contacts/`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify(formData),
       });
 
       if (!response.ok) {
         const errData = await response.json();
-        // Gère l'erreur très courante de l'email en doublon
         if (errData.email) throw new Error("Cet email est déjà utilisé par un autre contact.");
         throw new Error("Erreur de saisie. Vérifiez vos champs.");
       }
@@ -76,7 +87,6 @@ export default function ContactsPage() {
       setSubmitSuccess(true);
       fetchContacts();
       
-      // Ferme la fenêtre après 1.5s
       setTimeout(() => {
         setShowAddForm(false);
         setSubmitSuccess(false);
@@ -88,7 +98,7 @@ export default function ContactsPage() {
     }
   };
 
-  // --- LOGIQUE DE MODIFICATION ---
+  // --- MODIFICATION DE CONTACT ---
   const handleEditChange = (e) => {
     setSelectedContact({ ...selectedContact, [e.target.name]: e.target.value });
   };
@@ -96,18 +106,21 @@ export default function ContactsPage() {
   const handleUpdateSubmit = async (e) => {
     e.preventDefault();
     setEditError(null);
+    const token = localStorage.getItem('access_token');
 
     try {
-      // On n'envoie que les champs autorisés à être modifiés
       const updateData = {
         nom: selectedContact.nom,
         email: selectedContact.email,
         telephone: selectedContact.telephone
       };
 
-      const response = await fetch(`http://127.0.0.1:8000/api/contacts/${selectedContact.id}/`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/contacts/${selectedContact.id}/`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify(updateData),
       });
 
@@ -117,7 +130,6 @@ export default function ContactsPage() {
         throw new Error("Impossible de modifier le contact.");
       }
 
-      // Succès : on ferme la modale et on recharge
       setShowEditModal(false);
       setSelectedContact(null);
       fetchContacts();
@@ -127,20 +139,24 @@ export default function ContactsPage() {
     }
   };
 
-  // --- LOGIQUE DE SUPPRESSION ---
+  // --- SUPPRESSION DE CONTACT ---
   const handleDelete = async (id) => {
     if (!window.confirm("Êtes-vous sûr de vouloir supprimer ce contact ? Action irréversible.")) {
       return;
     }
 
+    const token = localStorage.getItem('access_token');
+
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/contacts/${id}/`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/contacts/${id}/`, {
         method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
       });
 
       if (!response.ok) throw new Error("Impossible de supprimer ce contact côté serveur.");
 
-      // Succès : on ferme la modale et on recharge
       setShowEditModal(false);
       setSelectedContact(null);
       fetchContacts();
@@ -177,7 +193,7 @@ export default function ContactsPage() {
             {submitSuccess ? (
               <div className="py-8 text-center">
                 <div className="text-green-600 text-xl font-bold mb-2">Succès !</div>
-                <p className="text-gray-600">Contact ajouté.</p>
+                <p className="text-gray-600">Contact ajouté avec succès.</p>
               </div>
             ) : (
               <form onSubmit={handleCreateSubmit} className="space-y-4">
@@ -203,7 +219,7 @@ export default function ContactsPage() {
         </div>
       )}
 
-      {/* --- MODALE DE DÉTAILS / MODIFICATION / SUPPRESSION --- */}
+      {/* --- MODALE DE MODIFICATION / SUPPRESSION --- */}
       {showEditModal && selectedContact && (
         <div className="fixed inset-0 bg-white/30 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-xl shadow-2xl border border-gray-200 w-96">

@@ -17,7 +17,8 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      const response = await fetch(process.env.NEXT_PUBLIC_API_URL + '/contacts/', {
+      // CORRECTION ICI : On utilise /token/ et les backticks
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/token/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(credentials),

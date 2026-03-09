@@ -20,7 +20,7 @@ export default function Dashboard() {
       }
 
       try {
-        const response = await fetch('http://127.0.0.1:8000/api/dashboard-stats/', {
+        const response = await fetch(process.env.NEXT_PUBLIC_API_URL + '/dashboard-stats/', {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
