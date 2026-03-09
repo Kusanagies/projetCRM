@@ -31,10 +31,6 @@ export default function LeadsPipelinePage() {
       if (!leadsRes.ok) throw new Error("Session expirée");
       
       const leadsData = await leadsRes.json();
-      
-      // --- CORRECTION DE SÉCURITÉ ICI ---
-      // Si l'API renvoie une pagination (avec .results), on prend les résultats.
-      // Sinon, on vérifie que c'est bien un tableau. Si ce n'est ni l'un ni l'autre, on met un tableau vide [].
       if (Array.isArray(leadsData)) {
         setLeads(leadsData);
       } else if (leadsData && Array.isArray(leadsData.results)) {
@@ -42,7 +38,6 @@ export default function LeadsPipelinePage() {
       } else {
         setLeads([]);
       }
-      // ----------------------------------
 
       const contactsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/contacts/`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -70,10 +65,20 @@ export default function LeadsPipelinePage() {
     setSubmitError(null);
     setSubmitSuccess(false);
 
-    if (!formData.contact) {
-      setSubmitError("Veuillez obligatoirement sélectionner un contact.");
+    // --- CORRECTION DU BUG ICI ---
+    if (!formData.contact || formData.contact === "") {
+      setSubmitError("Veuillez sélectionner un contact dans la liste déroulante.");
       return;
     }
+
+    // On force la conversion en nombre entier pour plaire à Django
+    const contactId = parseInt(formData.contact, 10);
+    
+    if (isNaN(contactId)) {
+      setSubmitError("L'identifiant du contact est invalide.");
+      return;
+    }
+    // -----------------------------
 
     try {
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/leads/`, {
@@ -86,7 +91,7 @@ export default function LeadsPipelinePage() {
           titre: formData.titre,
           statut: formData.statut,
           valeur_estimee: formData.valeur_estimee !== '' ? parseFloat(formData.valeur_estimee) : null,
-          contact: parseInt(formData.contact)
+          contact: contactId // Envoi du nombre parfait
         }),
       });
 
@@ -120,6 +125,13 @@ export default function LeadsPipelinePage() {
     e.preventDefault();
     setEditError(null);
 
+    // Sécurité supplémentaire au cas où l'API renvoie le contact sous forme d'objet
+    let contactId = selectedLead.contact;
+    if (typeof contactId === 'object' && contactId !== null) {
+      contactId = contactId.id;
+    }
+    contactId = parseInt(contactId, 10);
+
     try {
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/leads/${selectedLead.id}/`, {
         method: 'PUT',
@@ -131,7 +143,7 @@ export default function LeadsPipelinePage() {
           titre: selectedLead.titre,
           statut: selectedLead.statut,
           valeur_estimee: selectedLead.valeur_estimee !== '' && selectedLead.valeur_estimee !== null ? parseFloat(selectedLead.valeur_estimee) : null,
-          contact: selectedLead.contact 
+          contact: contactId 
         }),
       });
 
@@ -168,13 +180,10 @@ export default function LeadsPipelinePage() {
     } catch (err) { alert(err.message); }
   };
 
-  // --- CORRECTION DE SÉCURITÉ ICI AUSSI (Ligne du plantage) ---
-  // On s'assure que leads est toujours un tableau avant de filtrer
   const getLeadsByStatus = (status) => {
     if (!Array.isArray(leads)) return [];
     return leads.filter(lead => lead.statut === status);
   };
-  // ------------------------------------------------------------
 
   const colonnes = [
     { id: 'NOUVEAU', titre: 'Nouveaux prospects', couleur: 'border-blue-500' },
@@ -200,6 +209,14 @@ export default function LeadsPipelinePage() {
         <div className="fixed inset-0 bg-white/30 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-xl shadow-2xl border border-gray-200 w-96">
             <h2 className="text-xl font-bold mb-4">Nouvelle Opportunité</h2>
+            
+            {/* Message d'avertissement si aucun contact n'existe */}
+            {contacts.length === 0 && (
+              <div className="mb-4 p-3 bg-yellow-50 text-yellow-700 rounded text-sm border border-yellow-200">
+                ⚠️ Vous n'avez aucun contact. Allez d'abord dans l'onglet "Contacts" pour en créer un.
+              </div>
+            )}
+
             {submitError && <div className="mb-4 p-3 bg-red-50 text-red-600 rounded text-sm">{submitError}</div>}
             {submitSuccess ? (
               <div className="py-8 text-center"><div className="text-green-600 text-xl font-bold mb-2">Succès !</div></div>
@@ -211,7 +228,14 @@ export default function LeadsPipelinePage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Contact associé *</label>
-                  <select name="contact" required value={formData.contact} onChange={handleAddChange} className="w-full border rounded px-3 py-2 bg-white">
+                  <select 
+                    name="contact" 
+                    required 
+                    value={formData.contact} 
+                    onChange={handleAddChange} 
+                    className="w-full border rounded px-3 py-2 bg-white"
+                    disabled={contacts.length === 0}
+                  >
                     <option value="" disabled>Sélectionnez un contact</option>
                     {contacts.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
                   </select>
@@ -231,7 +255,13 @@ export default function LeadsPipelinePage() {
                 </div>
                 <div className="flex justify-end space-x-2 pt-4 border-t mt-6">
                   <button type="button" onClick={() => setShowAddForm(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Annuler</button>
-                  <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Enregistrer</button>
+                  <button 
+                    type="submit" 
+                    disabled={contacts.length === 0}
+                    className={`px-4 py-2 text-white rounded shadow-sm ${contacts.length === 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+                  >
+                    Enregistrer
+                  </button>
                 </div>
               </form>
             )}
