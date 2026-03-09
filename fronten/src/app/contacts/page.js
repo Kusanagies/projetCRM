@@ -18,8 +18,21 @@ export default function ContactsPage() {
   const [editError, setEditError] = useState(null);
 
   const fetchContacts = () => {
-    fetch('http://127.0.0.1:8000/api/contacts/')
-      .then(res => res.json())
+    // On récupère le badge d'accès stocké lors du login
+    const token = localStorage.getItem('access_token');
+
+    fetch('http://127.0.0.1:8000/api/contacts/', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        // On présente le badge d'accès au backend
+        'Authorization': `Bearer ${token}` 
+      }
+    })
+      .then(res => {
+        if (!res.ok) throw new Error("Non autorisé ou session expirée");
+        return res.json();
+      })
       .then(data => {
         setContacts(data);
         setLoading(false);
@@ -27,6 +40,8 @@ export default function ContactsPage() {
       .catch(err => {
         console.error("Erreur API:", err);
         setLoading(false);
+        // Optionnel : rediriger vers la page de login si le token est invalide
+        // window.location.href = '/login';
       });
   };
 

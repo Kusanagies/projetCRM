@@ -1,14 +1,17 @@
 from rest_framework import viewsets
+from rest_framework.permissions import IsAuthenticated
 from .models import Entreprise, Contact, Lead
 from .serializers import EntrepriseSerializer, ContactSerializer, LeadSerializer
-
+from .utils import envoyer_email_bienvenue
 class EntrepriseViewSet(viewsets.ModelViewSet):
     queryset = Entreprise.objects.all()
     serializer_class = EntrepriseSerializer
+    permission_classes = [IsAuthenticated]
 
 class ContactViewSet(viewsets.ModelViewSet):
     queryset = Contact.objects.all()
     serializer_class = ContactSerializer
+    permission_classes = [IsAuthenticated]
 
     def perform_create(self, serializer):
         contact = serializer.save()
@@ -21,3 +24,4 @@ class ContactViewSet(viewsets.ModelViewSet):
 class LeadViewSet(viewsets.ModelViewSet):
     queryset = Lead.objects.all()
     serializer_class = LeadSerializer   
+    permission_classes = [IsAuthenticated]

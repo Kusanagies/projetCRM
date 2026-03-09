@@ -4,7 +4,7 @@ Dans le dossier fronten/
 >npm run dev
 
 # Pour le back faire : 
-Dans le dossier backend/
+Dans le dossier backend/crm_backend
 
 >source venv/bin/activate
 >python manage.py runserver
