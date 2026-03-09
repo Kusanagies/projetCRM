@@ -3,43 +3,36 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-export default function Dashboard() {
+export default function DashboardPage() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const router = useRouter();
 
   useEffect(() => {
     const fetchStats = async () => {
       const token = localStorage.getItem('access_token');
-      
-      // Si pas de token, on renvoie vers le login
       if (!token) {
         router.push('/login');
         return;
       }
 
       try {
-        const response = await fetch(process.env.NEXT_PUBLIC_API_URL + '/dashboard-stats/', {
-          method: 'GET',
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/dashboard-stats/`, {
           headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
           }
         });
 
         if (!response.ok) {
-          throw new Error("Session expirée ou non autorisée");
+          throw new Error('Erreur de session');
         }
 
         const data = await response.json();
         setStats(data);
         setLoading(false);
       } catch (err) {
-        setError(err.message);
-        setLoading(false);
-        // En cas d'erreur de token, on nettoie et on redirige
-        localStorage.removeItem('access_token');
+        console.error('Erreur API:', err);
         router.push('/login');
       }
     };
@@ -47,63 +40,96 @@ export default function Dashboard() {
     fetchStats();
   }, [router]);
 
-  if (loading) return <div className="p-8 text-gray-500">Chargement de vos indicateurs...</div>;
-  if (error) return <div className="p-8 text-red-500">Erreur : {error}</div>;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-gray-500 font-medium">Chargement du tableau de bord...</div>
+      </div>
+    );
+  }
 
   return (
-    <main className="p-8 w-full">
-      <header className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-800">Tableau de bord intelligent</h1>
-        <p className="text-gray-500 mt-1">Aperçu de vos performances commerciales</p>
-      </header>
-
-      {/* Cartes des KPI connectées à la BDD */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        
-        {/* KPI : Chiffre d'Affaires */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <h3 className="text-gray-500 text-sm font-medium mb-2">CA Total (Gagné)</h3>
-          <p className="text-3xl font-bold text-gray-800">{stats.ca_total} EUR</p>
-          <p className="text-green-500 text-sm mt-2 font-medium">Basé sur les leads convertis</p>
-        </div>
-
-        {/* KPI : Nouveaux Prospects */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <h3 className="text-gray-500 text-sm font-medium mb-2">Nouveaux prospects</h3>
-          <p className="text-3xl font-bold text-gray-800">{stats.nouveaux_leads}</p>
-          <p className="text-blue-500 text-sm mt-2 font-medium">Leads à qualifier</p>
-        </div>
-
-        {/* KPI : Affaires en cours */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <h3 className="text-gray-500 text-sm font-medium mb-2">Affaires en cours</h3>
-          <p className="text-3xl font-bold text-gray-800">{stats.leads_en_cours}</p>
-          <p className="text-yellow-500 text-sm mt-2 font-medium">En cours de négociation</p>
-        </div>
-
+    <main className="p-8 h-full overflow-y-auto">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-800">Tableau de Bord</h1>
+        <p className="text-gray-500 mt-1">Bienvenue sur votre espace CRM Cloud</p>
       </div>
 
-      {/* Section Dynamique : Activité Récente */}
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-        <h2 className="text-xl font-bold text-gray-800 mb-4">Derniers contacts ajoutés</h2>
-        
-        {stats.contacts_recents.length > 0 ? (
-          <div className="divide-y divide-gray-100">
-            {stats.contacts_recents.map((contact) => (
-              <div key={contact.id} className="py-3 flex justify-between items-center">
-                <div>
-                  <p className="font-medium text-gray-800">{contact.nom}</p>
-                  <p className="text-sm text-gray-500">{contact.email}</p>
-                </div>
-                <div className="text-xs text-gray-400">
-                  {new Date(contact.date_ajout).toLocaleDateString('fr-FR')}
-                </div>
-              </div>
-            ))}
-          </div>
+      {/* --- SECTION 1 : KPIs COMMERCIAUX --- */}
+      <h2 className="text-lg font-bold text-gray-700 mb-4">Performances Commerciales</h2>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col">
+          <span className="text-sm font-semibold text-gray-500 mb-2 uppercase tracking-wider">Chiffre d'Affaires</span>
+          <span className="text-4xl font-black text-green-600">
+            {stats?.ca_total ? `${stats.ca_total.toLocaleString('fr-FR')} €` : '0 €'}
+          </span>
+          <span className="text-xs text-green-500 mt-2 font-medium">↑ Basé sur les leads convertis</span>
+        </div>
+
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col">
+          <span className="text-sm font-semibold text-gray-500 mb-2 uppercase tracking-wider">Nouveaux Prospects</span>
+          <span className="text-4xl font-black text-blue-600">{stats?.nouveaux_leads || 0}</span>
+          <span className="text-xs text-gray-400 mt-2 font-medium">À contacter rapidement</span>
+        </div>
+
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col">
+          <span className="text-sm font-semibold text-gray-500 mb-2 uppercase tracking-wider">Affaires en cours</span>
+          <span className="text-4xl font-black text-yellow-500">{stats?.leads_en_cours || 0}</span>
+          <span className="text-xs text-gray-400 mt-2 font-medium">Dans le pipeline</span>
+        </div>
+      </div>
+
+      {/* --- SECTION 2 : STATISTIQUES EMAILING (BREVO) --- */}
+      <h2 className="text-lg font-bold text-gray-700 mb-4 flex items-center">
+        <span>Campagnes Emailing (Brevo)</span>
+        <span className="ml-3 px-2 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">Automatisé</span>
+      </h2>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-10">
+        <div className="bg-gradient-to-br from-blue-50 to-white p-5 rounded-lg border border-blue-100 shadow-sm">
+          <div className="text-blue-500 text-sm font-bold mb-1">Emails Envoyés</div>
+          <div className="text-2xl font-black text-gray-800">{stats?.email_stats?.envoyes || 0}</div>
+        </div>
+        <div className="bg-gradient-to-br from-green-50 to-white p-5 rounded-lg border border-green-100 shadow-sm">
+          <div className="text-green-600 text-sm font-bold mb-1">Ouvertures</div>
+          <div className="text-2xl font-black text-gray-800">{stats?.email_stats?.ouverts || 0}</div>
+        </div>
+        <div className="bg-gradient-to-br from-purple-50 to-white p-5 rounded-lg border border-purple-100 shadow-sm">
+          <div className="text-purple-600 text-sm font-bold mb-1">Clics uniques</div>
+          <div className="text-2xl font-black text-gray-800">{stats?.email_stats?.clics || 0}</div>
+        </div>
+        <div className="bg-gradient-to-br from-red-50 to-white p-5 rounded-lg border border-red-100 shadow-sm">
+          <div className="text-red-500 text-sm font-bold mb-1">Rebonds (Erreurs)</div>
+          <div className="text-2xl font-black text-gray-800">{stats?.email_stats?.bounces || 0}</div>
+        </div>
+      </div>
+
+      {/* --- SECTION 3 : DERNIERS CONTACTS --- */}
+      <h2 className="text-lg font-bold text-gray-700 mb-4">Activité récente : Derniers contacts ajoutés</h2>
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        {stats?.contacts_recents && stats.contacts_recents.length > 0 ? (
+          <table className="w-full text-left">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-100">
+                <th className="p-4 text-sm font-semibold text-gray-600">Nom complet</th>
+                <th className="p-4 text-sm font-semibold text-gray-600">Adresse Email</th>
+                <th className="p-4 text-sm font-semibold text-gray-600">Date d'ajout</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stats.contacts_recents.map((contact) => (
+                <tr key={contact.id} className="border-b border-gray-50 hover:bg-gray-50">
+                  <td className="p-4 font-medium text-gray-800">{contact.nom}</td>
+                  <td className="p-4 text-gray-600 text-sm">{contact.email}</td>
+                  <td className="p-4 text-gray-500 text-sm">
+                    {new Date(contact.date_ajout).toLocaleDateString('fr-FR')}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         ) : (
-          <div className="text-gray-500 text-sm bg-gray-50 p-8 rounded border border-dashed border-gray-200 text-center">
-            Aucune activité récente.
+          <div className="p-8 text-center text-gray-500 italic">
+            Aucun contact ajouté récemment.
           </div>
         )}
       </div>
