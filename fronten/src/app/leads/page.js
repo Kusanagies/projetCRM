@@ -5,17 +5,18 @@ import { useRouter } from 'next/navigation';
 
 export default function LeadsPipelinePage() {
   const [leads, setLeads] = useState([]);
+  const [contacts, setContacts] = useState([]); // NOUVEAU: Pour stocker les contacts
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
   // États pour le formulaire d'ajout
   const [showAddForm, setShowAddForm] = useState(false);
-  const [formData, setFormData] = useState({ titre: '', statut: 'NOUVEAU', valeur_estimee: '' });
+  const [formData, setFormData] = useState({ titre: '', statut: 'NOUVEAU', valeur_estimee: '', contact: '' });
   const [submitError, setSubmitError] = useState(null);
   const [submitSuccess, setSubmitSuccess] = useState(false);
 
-  // Fonction pour charger les leads avec la sécurité JWT
-  const fetchLeads = async () => {
+  // Fonction pour charger les données (Leads ET Contacts)
+  const fetchData = async () => {
     const token = localStorage.getItem('access_token');
     
     if (!token) {
@@ -24,30 +25,33 @@ export default function LeadsPipelinePage() {
     }
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/leads/`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        }
+      // 1. On charge les leads
+      const leadsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/leads/`, {
+        headers: { 'Authorization': `Bearer ${token}` }
       });
+      if (!leadsRes.ok) throw new Error("Erreur de session");
+      const leadsData = await leadsRes.json();
+      setLeads(leadsData);
 
-      if (!response.ok) throw new Error("Session expirée ou erreur d'accès");
+      // 2. On charge les contacts pour le menu déroulant
+      const contactsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/contacts/`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (contactsRes.ok) {
+        const contactsData = await contactsRes.json();
+        setContacts(contactsData);
+      }
 
-      const data = await response.json();
-      setLeads(data);
       setLoading(false);
     } catch (err) {
       console.error("Erreur API:", err);
       setLoading(false);
-      if (err.message.includes("Session")) {
-        router.push('/login');
-      }
+      router.push('/login');
     }
   };
 
   useEffect(() => {
-    fetchLeads();
+    fetchData();
   }, [router]);
 
   // --- LOGIQUE DE CRÉATION D'UN LEAD ---
@@ -59,6 +63,11 @@ export default function LeadsPipelinePage() {
     e.preventDefault();
     setSubmitError(null);
     setSubmitSuccess(false);
+
+    if (!formData.contact) {
+      setSubmitError("Veuillez sélectionner un contact.");
+      return;
+    }
 
     const token = localStorage.getItem('access_token');
 
@@ -72,7 +81,8 @@ export default function LeadsPipelinePage() {
         body: JSON.stringify({
           titre: formData.titre,
           statut: formData.statut,
-          valeur_estimee: formData.valeur_estimee ? parseFloat(formData.valeur_estimee) : 0
+          valeur_estimee: formData.valeur_estimee ? parseFloat(formData.valeur_estimee) : 0,
+          contact: parseInt(formData.contact) // NOUVEAU: On envoie l'ID du contact
         }),
       });
 
@@ -81,12 +91,12 @@ export default function LeadsPipelinePage() {
       }
 
       setSubmitSuccess(true);
-      fetchLeads(); // On recharge le tableau Kanban
+      fetchData(); // On recharge le tableau Kanban
       
       setTimeout(() => {
         setShowAddForm(false);
         setSubmitSuccess(false);
-        setFormData({ titre: '', statut: 'NOUVEAU', valeur_estimee: '' });
+        setFormData({ titre: '', statut: 'NOUVEAU', valeur_estimee: '', contact: '' });
       }, 1500);
       
     } catch (err) {
@@ -142,6 +152,24 @@ export default function LeadsPipelinePage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Titre de l'opportunité *</label>
                   <input type="text" name="titre" required value={formData.titre} onChange={handleAddChange} className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:border-blue-500" placeholder="Ex: Vente licences SaaS" />
                 </div>
+                
+                {/* NOUVEAU: Sélection du contact */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Contact associé *</label>
+                  <select 
+                    name="contact" 
+                    required 
+                    value={formData.contact} 
+                    onChange={handleAddChange} 
+                    className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:border-blue-500 bg-white"
+                  >
+                    <option value="" disabled>Sélectionnez un contact</option>
+                    {contacts.map((c) => (
+                      <option key={c.id} value={c.id}>{c.nom}</option>
+                    ))}
+                  </select>
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Valeur estimée (EUR)</label>
                   <input type="number" name="valeur_estimee" value={formData.valeur_estimee} onChange={handleAddChange} className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:border-blue-500" placeholder="Ex: 5000" />
@@ -188,7 +216,6 @@ export default function LeadsPipelinePage() {
                     </p>
                     <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
                       <span>[Ref: #{lead.id}]</span>
-                      <span className="text-blue-500 hover:underline">[Voir]</span>
                     </div>
                   </div>
                 ))}
