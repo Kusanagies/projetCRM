@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Entreprise, Contact, Lead
+from .models import Entreprise, Contact, Lead, AutomationRule
 
 class EntrepriseSerializer(serializers.ModelSerializer):
     class Meta:
@@ -14,4 +14,9 @@ class ContactSerializer(serializers.ModelSerializer):
 class LeadSerializer(serializers.ModelSerializer):
     class Meta:
         model = Lead
+        fields = '__all__'
+
+class AutomationRuleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AutomationRule
         fields = '__all__'

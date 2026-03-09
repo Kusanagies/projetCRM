@@ -4,9 +4,9 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from django.db.models import Sum
 
-from .models import Entreprise, Contact, Lead
-from .serializers import EntrepriseSerializer, ContactSerializer, LeadSerializer
-from .utils import envoyer_email_bienvenue, envoyer_email_conversion_lead, get_brevo_stats
+from .models import Entreprise, Contact, Lead, AutomationRule
+from .serializers import EntrepriseSerializer, ContactSerializer, LeadSerializer, AutomationRuleSerializer
+from .utils import envoyer_email_bienvenue, envoyer_email_automatique, get_brevo_stats
 
 class EntrepriseViewSet(viewsets.ModelViewSet):
     queryset = Entreprise.objects.all()
@@ -27,26 +27,46 @@ class ContactViewSet(viewsets.ModelViewSet):
         except Exception as e:
             print(f"[Erreur] Impossible d'envoyer l'email via Brevo : {e}")
 
+class AutomationRuleViewSet(viewsets.ModelViewSet):
+    queryset = AutomationRule.objects.all()
+    serializer_class = AutomationRuleSerializer
+    permission_classes = [IsAuthenticated]
 class LeadViewSet(viewsets.ModelViewSet):
     queryset = Lead.objects.all()
     serializer_class = LeadSerializer   
     permission_classes = [IsAuthenticated]
 
     def perform_update(self, serializer):
-        # On sauvegarde l'ancien statut avant la mise à jour
+        # On sauvegarde l'ancien statut
         ancien_statut = self.get_object().statut
         
-        # On sauvegarde les nouvelles données
+        # On sauvegarde les nouvelles données dans la base
         lead = serializer.save()
         
-        # Automatisation 2 : Si le lead passe en CONVERTI (via Drag&Drop ou Edit)
-        if ancien_statut != 'CONVERTI' and lead.statut == 'CONVERTI':
-            if lead.contact and lead.contact.email:
-                try:
-                    envoyer_email_conversion_lead(lead.contact.email, lead.contact.nom, lead.titre)
-                    print(f"[Succes] Email de conversion envoye a {lead.contact.email}")
-                except Exception as e:
-                    print(f"[Erreur] Email de conversion echoue : {e}")
+        # Si le statut a changé, on cherche des automatisations !
+        if ancien_statut != lead.statut:
+            regles = AutomationRule.objects.filter(statut_declencheur=lead.statut, actif=True)
+            
+            if regles.exists() and lead.contact and lead.contact.email:
+                for regle in regles:
+                    # 1. On prépare la valeur estimée (en gérant le cas où c'est vide)
+                    valeur = f"{lead.valeur_estimee} €" if lead.valeur_estimee else "Montant non défini"
+                    
+                    # 2. On remplace les variables magiques dans le message
+                    msg_perso = regle.message.replace('{{contact.nom}}', lead.contact.nom)
+                    msg_perso = msg_perso.replace('{{lead.titre}}', lead.titre)
+                    msg_perso = msg_perso.replace('{{lead.valeur}}', valeur)
+
+                    # 3. On remplace aussi dans le sujet du mail !
+                    sujet_perso = regle.sujet.replace('{{contact.nom}}', lead.contact.nom)
+                    sujet_perso = sujet_perso.replace('{{lead.titre}}', lead.titre)
+
+                    # 4. On envoie l'email
+                    try:
+                        envoyer_email_automatique(lead.contact.email, lead.contact.nom, sujet_perso, msg_perso)
+                        print(f"[Succes] Email auto envoyé à {lead.contact.email}")
+                    except Exception as e:
+                        print(f"[Erreur] Email auto échoué : {e}")
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])

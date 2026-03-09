@@ -56,3 +56,22 @@ def get_brevo_stats():
         
     # Valeurs par défaut si l'API échoue ou n'a pas encore de données
     return {"envoyes": 0, "ouverts": 0, "clics": 0, "bounces": 0}
+
+def envoyer_email_automatique(email_destinataire, nom_destinataire, sujet, message_texte):
+    """ Envoi d'un email basé sur une règle d'automatisation dynamique """
+    api_key = os.environ.get('BREVO_API_KEY')
+    url = "https://api.brevo.com/v3/smtp/email"
+
+    # On convertit les sauts de ligne "Entrée" du texte en balises <br> HTML
+    html_content = f"<html><body><p>{message_texte.replace(chr(10), '<br>')}</p></body></html>"
+
+    payload = {
+        "sender": {"name": "L'équipe", "email": SENDER_EMAIL}, # Utilisez votre SENDER_EMAIL défini plus haut
+        "to": [{"email": email_destinataire, "name": nom_destinataire}],
+        "subject": sujet,
+        "htmlContent": html_content
+    }
+    
+    headers = {"accept": "application/json", "api-key": api_key, "content-type": "application/json"}
+    response = requests.post(url, json=payload, headers=headers)
+    return response.status_code

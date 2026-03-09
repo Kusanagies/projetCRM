@@ -47,3 +47,20 @@ class Lead(models.Model):
 
     def __str__(self):
         return f"{self.titre} - {self.contact.nom} ({self.get_statut_display()})"
+    
+class AutomationRule(models.Model):
+    STATUT_CHOICES = [
+        ('NOUVEAU', 'Nouveau'),
+        ('EN_COURS', 'En cours'),
+        ('CONVERTI', 'Converti'),
+        ('PERDU', 'Perdu'),
+    ]
+    
+    statut_declencheur = models.CharField(max_length=20, choices=STATUT_CHOICES)
+    actif = models.BooleanField(default=True)
+    sujet = models.CharField(max_length=255)
+    message = models.TextField()
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Règle: {self.statut_declencheur} - Actif: {self.actif}"
