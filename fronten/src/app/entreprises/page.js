@@ -7,7 +7,7 @@ export default function EntreprisesPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('http://127.0.0.1:8000/api/entreprises/')
+    fetch('fetch(process.env.NEXT_PUBLIC_API_URL + '/contacts/'')
       .then(res => res.json())
       .then(data => {
         setEntreprises(data);
