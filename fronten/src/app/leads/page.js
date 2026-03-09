@@ -9,9 +9,21 @@ export default function LeadsPipelinePage() {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
-  // États pour le formulaire d'ajout
+  // --- ÉTATS POUR LE FORMULAIRE D'AJOUT ---
   const [showAddForm, setShowAddForm] = useState(false);
-  const [formData, setFormData] = useState({ titre: '', statut: 'NOUVEAU', valeur_estimee: '', contact: '' });
+  // NOUVEAU : Un état pour savoir si on crée un nouveau contact ou si on en choisit un existant
+  const [isNewContact, setIsNewContact] = useState(false); 
+  
+  const [formData, setFormData] = useState({ 
+    titre: '', 
+    statut: 'NOUVEAU', 
+    valeur_estimee: '', 
+    contact: '', // ID du contact existant
+    newContactNom: '', // Champs pour le nouveau contact
+    newContactEmail: '',
+    newContactTelephone: ''
+  });
+  
   const [submitError, setSubmitError] = useState(null);
   const [submitSuccess, setSubmitSuccess] = useState(false);
 
@@ -57,7 +69,7 @@ export default function LeadsPipelinePage() {
 
   useEffect(() => { fetchData(); }, [router]);
 
-  // --- LOGIQUE DE CRÉATION ---
+  // --- LOGIQUE DE CRÉATION (LEAD + CONTACT OPTIONNEL) ---
   const handleAddChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
   const handleCreateSubmit = async (e) => {
@@ -65,33 +77,63 @@ export default function LeadsPipelinePage() {
     setSubmitError(null);
     setSubmitSuccess(false);
 
-    // --- CORRECTION DU BUG ICI ---
-    if (!formData.contact || formData.contact === "") {
-      setSubmitError("Veuillez sélectionner un contact dans la liste déroulante.");
-      return;
-    }
-
-    // On force la conversion en nombre entier pour plaire à Django
-    const contactId = parseInt(formData.contact, 10);
-    
-    if (isNaN(contactId)) {
-      setSubmitError("L'identifiant du contact est invalide.");
-      return;
-    }
-    // -----------------------------
+    const token = localStorage.getItem('access_token');
+    let finalContactId = null;
 
     try {
+      // ÉTAPE 1 : Gérer le contact (Existant ou Création)
+      if (isNewContact) {
+        // On crée d'abord le contact dans la base de données
+        if (!formData.newContactNom || !formData.newContactEmail) {
+          throw new Error("Le nom et l'email du nouveau contact sont obligatoires.");
+        }
+
+        const contactRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/contacts/`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            nom: formData.newContactNom,
+            email: formData.newContactEmail,
+            telephone: formData.newContactTelephone
+          })
+        });
+
+        if (!contactRes.ok) {
+          const errData = await contactRes.json();
+          let errorMsg = "Erreur création contact";
+          if (typeof errData === 'object') {
+            errorMsg = Object.entries(errData).map(([k, v]) => `${k}: ${v}`).join(" | ");
+          }
+          throw new Error(`Impossible de créer le contact : ${errorMsg}`);
+        }
+
+        const newContactData = await contactRes.json();
+        finalContactId = newContactData.id; // On récupère le super ID fraîchement créé !
+
+      } else {
+        // On utilise le contact sélectionné dans la liste
+        if (!formData.contact || formData.contact === "") {
+          throw new Error("Veuillez sélectionner un contact dans la liste ou choisir d'en créer un.");
+        }
+        finalContactId = parseInt(formData.contact, 10);
+        if (isNaN(finalContactId)) throw new Error("L'identifiant du contact est invalide.");
+      }
+
+      // ÉTAPE 2 : Créer le Lead avec le bon ID de contact
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/leads/`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           titre: formData.titre,
           statut: formData.statut,
           valeur_estimee: formData.valeur_estimee !== '' ? parseFloat(formData.valeur_estimee) : null,
-          contact: contactId // Envoi du nombre parfait
+          contact: finalContactId
         }),
       });
 
@@ -109,8 +151,14 @@ export default function LeadsPipelinePage() {
       setTimeout(() => {
         setShowAddForm(false);
         setSubmitSuccess(false);
-        setFormData({ titre: '', statut: 'NOUVEAU', valeur_estimee: '', contact: '' });
+        // On réinitialise tout
+        setFormData({ 
+          titre: '', statut: 'NOUVEAU', valeur_estimee: '', contact: '',
+          newContactNom: '', newContactEmail: '', newContactTelephone: ''
+        });
+        setIsNewContact(false);
       }, 1500);
+
     } catch (err) { 
       setSubmitError(err.message); 
     }
@@ -125,7 +173,6 @@ export default function LeadsPipelinePage() {
     e.preventDefault();
     setEditError(null);
 
-    // Sécurité supplémentaire au cas où l'API renvoie le contact sous forme d'objet
     let contactId = selectedLead.contact;
     if (typeof contactId === 'object' && contactId !== null) {
       contactId = contactId.id;
@@ -206,62 +253,97 @@ export default function LeadsPipelinePage() {
 
       {/* --- MODALE D'AJOUT --- */}
       {showAddForm && (
-        <div className="fixed inset-0 bg-white/30 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-xl shadow-2xl border border-gray-200 w-96">
+        <div className="fixed inset-0 bg-white/30 backdrop-blur-sm flex items-center justify-center z-50 overflow-y-auto">
+          <div className="bg-white p-6 rounded-xl shadow-2xl border border-gray-200 w-[500px] my-8">
             <h2 className="text-xl font-bold mb-4">Nouvelle Opportunité</h2>
-            
-            {/* Message d'avertissement si aucun contact n'existe */}
-            {contacts.length === 0 && (
-              <div className="mb-4 p-3 bg-yellow-50 text-yellow-700 rounded text-sm border border-yellow-200">
-                ⚠️ Vous n'avez aucun contact. Allez d'abord dans l'onglet "Contacts" pour en créer un.
-              </div>
-            )}
 
             {submitError && <div className="mb-4 p-3 bg-red-50 text-red-600 rounded text-sm">{submitError}</div>}
+            
             {submitSuccess ? (
               <div className="py-8 text-center"><div className="text-green-600 text-xl font-bold mb-2">Succès !</div></div>
             ) : (
               <form onSubmit={handleCreateSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Titre *</label>
-                  <input type="text" name="titre" required value={formData.titre} onChange={handleAddChange} className="w-full border rounded px-3 py-2" />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Titre de l'opportunité *</label>
+                  <input type="text" name="titre" required value={formData.titre} onChange={handleAddChange} className="w-full border rounded px-3 py-2 focus:border-blue-500 outline-none" placeholder="Ex: Vente licences SaaS" />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Contact associé *</label>
-                  <select 
-                    name="contact" 
-                    required 
-                    value={formData.contact} 
-                    onChange={handleAddChange} 
-                    className="w-full border rounded px-3 py-2 bg-white"
-                    disabled={contacts.length === 0}
-                  >
-                    <option value="" disabled>Sélectionnez un contact</option>
-                    {contacts.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
-                  </select>
+                
+                {/* --- SÉLECTEUR : CONTACT EXISTANT OU NOUVEAU CONTACT --- */}
+                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mt-4 mb-4">
+                  <div className="flex space-x-4 mb-4 border-b border-gray-200 pb-3">
+                    <label className="flex items-center cursor-pointer">
+                      <input 
+                        type="radio" 
+                        name="contactMode" 
+                        checked={!isNewContact} 
+                        onChange={() => setIsNewContact(false)} 
+                        className="mr-2 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-sm font-medium text-gray-700">Client existant</span>
+                    </label>
+                    <label className="flex items-center cursor-pointer">
+                      <input 
+                        type="radio" 
+                        name="contactMode" 
+                        checked={isNewContact} 
+                        onChange={() => setIsNewContact(true)} 
+                        className="mr-2 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-sm font-medium text-gray-700">Nouveau client</span>
+                    </label>
+                  </div>
+
+                  {!isNewContact ? (
+                    <div>
+                      <select 
+                        name="contact" 
+                        required={!isNewContact} 
+                        value={formData.contact} 
+                        onChange={handleAddChange} 
+                        className="w-full border rounded px-3 py-2 bg-white focus:border-blue-500 outline-none"
+                      >
+                        <option value="" disabled>-- Sélectionnez un contact --</option>
+                        {contacts.map((c) => <option key={c.id} value={c.id}>{c.nom} ({c.email})</option>)}
+                      </select>
+                      {contacts.length === 0 && (
+                        <p className="text-xs text-red-500 mt-1">Aucun contact trouvé, veuillez créer un nouveau client.</p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div>
+                        <input type="text" name="newContactNom" required={isNewContact} value={formData.newContactNom} onChange={handleAddChange} placeholder="Nom complet *" className="w-full border rounded px-3 py-2 focus:border-blue-500 outline-none text-sm" />
+                      </div>
+                      <div>
+                        <input type="email" name="newContactEmail" required={isNewContact} value={formData.newContactEmail} onChange={handleAddChange} placeholder="Adresse Email *" className="w-full border rounded px-3 py-2 focus:border-blue-500 outline-none text-sm" />
+                      </div>
+                      <div>
+                        <input type="text" name="newContactTelephone" value={formData.newContactTelephone} onChange={handleAddChange} placeholder="Téléphone (optionnel)" className="w-full border rounded px-3 py-2 focus:border-blue-500 outline-none text-sm" />
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Valeur estimée (EUR)</label>
-                  <input type="number" name="valeur_estimee" value={formData.valeur_estimee} onChange={handleAddChange} className="w-full border rounded px-3 py-2" />
+                {/* ------------------------------------------------------- */}
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Valeur estimée (EUR)</label>
+                    <input type="number" name="valeur_estimee" value={formData.valeur_estimee} onChange={handleAddChange} className="w-full border rounded px-3 py-2 focus:border-blue-500 outline-none" placeholder="Ex: 5000" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Statut initial</label>
+                    <select name="statut" value={formData.statut} onChange={handleAddChange} className="w-full border rounded px-3 py-2 bg-white focus:border-blue-500 outline-none">
+                      <option value="NOUVEAU">Nouveau</option>
+                      <option value="EN_COURS">En cours</option>
+                      <option value="CONVERTI">Converti</option>
+                      <option value="PERDU">Perdu</option>
+                    </select>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Statut initial</label>
-                  <select name="statut" value={formData.statut} onChange={handleAddChange} className="w-full border rounded px-3 py-2 bg-white">
-                    <option value="NOUVEAU">Nouveau</option>
-                    <option value="EN_COURS">En cours</option>
-                    <option value="CONVERTI">Converti</option>
-                    <option value="PERDU">Perdu</option>
-                  </select>
-                </div>
+
                 <div className="flex justify-end space-x-2 pt-4 border-t mt-6">
                   <button type="button" onClick={() => setShowAddForm(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Annuler</button>
-                  <button 
-                    type="submit" 
-                    disabled={contacts.length === 0}
-                    className={`px-4 py-2 text-white rounded shadow-sm ${contacts.length === 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
-                  >
-                    Enregistrer
-                  </button>
+                  <button type="submit" className="px-4 py-2 text-white rounded shadow-sm bg-blue-600 hover:bg-blue-700">Enregistrer</button>
                 </div>
               </form>
             )}
@@ -269,7 +351,7 @@ export default function LeadsPipelinePage() {
         </div>
       )}
 
-      {/* --- MODALE DE MODIFICATION --- */}
+      {/* --- MODALE DE MODIFICATION (inchangée) --- */}
       {showEditModal && selectedLead && (
         <div className="fixed inset-0 bg-white/30 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-xl shadow-2xl border border-gray-200 w-96">
