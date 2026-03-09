@@ -81,13 +81,20 @@ export default function LeadsPipelinePage() {
         body: JSON.stringify({
           titre: formData.titre,
           statut: formData.statut,
-          valeur_estimee: formData.valeur_estimee ? parseFloat(formData.valeur_estimee) : 0,
-          contact: parseInt(formData.contact) // NOUVEAU: On envoie l'ID du contact
+          // Si pas de valeur, on envoie null (Django préfère ça à 0 ou vide)
+          valeur_estimee: formData.valeur_estimee ? parseFloat(formData.valeur_estimee) : null,
+          contact: parseInt(formData.contact)
         }),
       });
 
+      // MODIFICATION ICI : On lit la vraie erreur envoyée par Django
       if (!response.ok) {
-        throw new Error("Erreur lors de la création du lead. Vérifiez les champs.");
+        const errData = await response.json();
+        console.log("Erreur détaillée de Django :", errData);
+        
+        // On transforme l'objet d'erreur de Django en texte lisible
+        const errorMessage = Object.keys(errData).map(key => `${key}: ${errData[key]}`).join(" | ");
+        throw new Error(`Refusé par le serveur -> ${errorMessage}`);
       }
 
       setSubmitSuccess(true);
