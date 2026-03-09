@@ -15,7 +15,7 @@ export default function LeadsPipelinePage() {
   const [submitError, setSubmitError] = useState(null);
   const [submitSuccess, setSubmitSuccess] = useState(false);
 
-  // NOUVEAU : États pour la modification / suppression
+  // États pour la modification / suppression
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedLead, setSelectedLead] = useState(null);
   const [editError, setEditError] = useState(null);
@@ -72,12 +72,21 @@ export default function LeadsPipelinePage() {
         body: JSON.stringify({
           titre: formData.titre,
           statut: formData.statut,
-          valeur_estimee: formData.valeur_estimee ? parseFloat(formData.valeur_estimee) : null,
+          valeur_estimee: formData.valeur_estimee !== '' ? parseFloat(formData.valeur_estimee) : null,
           contact: parseInt(formData.contact)
         }),
       });
 
-      if (!response.ok) throw new Error(`Refusé par le serveur. Vérifiez les champs.`);
+      // AFFICHAGE DE LA VRAIE ERREUR DJANGO
+      if (!response.ok) {
+        const errData = await response.json();
+        console.log("Erreur détaillée :", errData);
+        let errorMsg = "Erreur serveur";
+        if (typeof errData === 'object') {
+          errorMsg = Object.entries(errData).map(([k, v]) => `${k}: ${v}`).join(" | ");
+        }
+        throw new Error(`Refusé : ${errorMsg}`);
+      }
 
       setSubmitSuccess(true);
       fetchData();
@@ -86,10 +95,12 @@ export default function LeadsPipelinePage() {
         setSubmitSuccess(false);
         setFormData({ titre: '', statut: 'NOUVEAU', valeur_estimee: '', contact: '' });
       }, 1500);
-    } catch (err) { setSubmitError(err.message); }
+    } catch (err) { 
+      setSubmitError(err.message); 
+    }
   };
 
-  // --- NOUVEAU : LOGIQUE DE MODIFICATION ET SUPPRESSION ---
+  // --- LOGIQUE DE MODIFICATION ET SUPPRESSION ---
   const handleEditChange = (e) => {
     setSelectedLead({ ...selectedLead, [e.target.name]: e.target.value });
   };
@@ -108,16 +119,23 @@ export default function LeadsPipelinePage() {
         body: JSON.stringify({
           titre: selectedLead.titre,
           statut: selectedLead.statut,
-          valeur_estimee: selectedLead.valeur_estimee ? parseFloat(selectedLead.valeur_estimee) : null,
-          contact: selectedLead.contact // On renvoie le même contact
+          valeur_estimee: selectedLead.valeur_estimee !== '' && selectedLead.valeur_estimee !== null ? parseFloat(selectedLead.valeur_estimee) : null,
+          contact: selectedLead.contact 
         }),
       });
 
-      if (!response.ok) throw new Error("Erreur lors de la mise à jour.");
+      if (!response.ok) {
+        const errData = await response.json();
+        let errorMsg = "Erreur de mise à jour";
+        if (typeof errData === 'object') {
+          errorMsg = Object.entries(errData).map(([k, v]) => `${k}: ${v}`).join(" | ");
+        }
+        throw new Error(`Refusé : ${errorMsg}`);
+      }
 
       setShowEditModal(false);
       setSelectedLead(null);
-      fetchData(); // Recharge le Kanban pour déplacer la carte !
+      fetchData(); 
     } catch (err) {
       setEditError(err.message);
     }
@@ -160,7 +178,7 @@ export default function LeadsPipelinePage() {
         </button>
       </div>
 
-      {/* --- MODALE D'AJOUT (Inchangée) --- */}
+      {/* --- MODALE D'AJOUT --- */}
       {showAddForm && (
         <div className="fixed inset-0 bg-white/30 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-xl shadow-2xl border border-gray-200 w-96">
@@ -204,7 +222,7 @@ export default function LeadsPipelinePage() {
         </div>
       )}
 
-      {/* --- NOUVEAU : MODALE DE MODIFICATION --- */}
+      {/* --- MODALE DE MODIFICATION --- */}
       {showEditModal && selectedLead && (
         <div className="fixed inset-0 bg-white/30 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-xl shadow-2xl border border-gray-200 w-96">
@@ -218,7 +236,7 @@ export default function LeadsPipelinePage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Valeur estimée (EUR)</label>
-                <input type="number" name="valeur_estimee" value={selectedLead.valeur_estimee || ''} onChange={handleEditChange} className="w-full border rounded px-3 py-2" />
+                <input type="number" name="valeur_estimee" value={selectedLead.valeur_estimee !== null ? selectedLead.valeur_estimee : ''} onChange={handleEditChange} className="w-full border rounded px-3 py-2" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Statut (Changer de colonne)</label>
@@ -267,7 +285,6 @@ export default function LeadsPipelinePage() {
                     </p>
                     <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
                       <span>[Ref: #{lead.id}]</span>
-                      {/* BOUTON MODIFIÉ ICI */}
                       <button 
                         onClick={() => { setSelectedLead(lead); setShowEditModal(true); }}
                         className="text-blue-500 hover:underline font-medium"
