@@ -12,7 +12,7 @@ def envoyer_email_bienvenue(email_destinataire, nom_destinataire):
     payload = {
         "sender": {
             "name": "L'équipe CRM Cloud", 
-            "email": "votre_email_inscrit_sur_brevo@domaine.com" # Remplacez par votre vrai email d'expéditeur
+            "email": "sylvainhuang3@gmail.com" 
         },
         "to": [{"email": email_destinataire, "name": nom_destinataire}],
         "subject": "Bienvenue dans notre réseau !",
