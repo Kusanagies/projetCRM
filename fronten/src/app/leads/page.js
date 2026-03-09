@@ -9,21 +9,13 @@ export default function LeadsPipelinePage() {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
-  // --- ÉTATS POUR LE FORMULAIRE D'AJOUT ---
+  // États pour le formulaire d'ajout
   const [showAddForm, setShowAddForm] = useState(false);
-  // NOUVEAU : Un état pour savoir si on crée un nouveau contact ou si on en choisit un existant
   const [isNewContact, setIsNewContact] = useState(false); 
-  
   const [formData, setFormData] = useState({ 
-    titre: '', 
-    statut: 'NOUVEAU', 
-    valeur_estimee: '', 
-    contact: '', // ID du contact existant
-    newContactNom: '', // Champs pour le nouveau contact
-    newContactEmail: '',
-    newContactTelephone: ''
+    titre: '', statut: 'NOUVEAU', valeur_estimee: '', contact: '',
+    newContactNom: '', newContactEmail: '', newContactTelephone: ''
   });
-  
   const [submitError, setSubmitError] = useState(null);
   const [submitSuccess, setSubmitSuccess] = useState(false);
 
@@ -69,7 +61,70 @@ export default function LeadsPipelinePage() {
 
   useEffect(() => { fetchData(); }, [router]);
 
-  // --- LOGIQUE DE CRÉATION (LEAD + CONTACT OPTIONNEL) ---
+  // ==========================================
+  // NOUVEAU : LOGIQUE DE DRAG AND DROP
+  // ==========================================
+  
+  // 1. Quand on attrape une carte
+  const handleDragStart = (e, leadId) => {
+    e.dataTransfer.setData('leadId', leadId.toString());
+  };
+
+  // 2. Pour autoriser le dépôt sur une colonne
+  const handleDragOver = (e) => {
+    e.preventDefault(); 
+  };
+
+  // 3. Quand on lâche la carte dans une nouvelle colonne
+  const handleDrop = async (e, nouveauStatut) => {
+    e.preventDefault();
+    const leadIdStr = e.dataTransfer.getData('leadId');
+    if (!leadIdStr) return;
+
+    const leadId = parseInt(leadIdStr, 10);
+    const leadDeplace = leads.find(l => l.id === leadId);
+
+    // Si on lâche dans la même colonne, on ne fait rien
+    if (!leadDeplace || leadDeplace.statut === nouveauStatut) return;
+
+    // Mise à jour visuelle instantanée (Optimistic UI) pour que ce soit fluide
+    const leadsMisesAJour = leads.map(l => 
+      l.id === leadId ? { ...l, statut: nouveauStatut } : l
+    );
+    setLeads(leadsMisesAJour);
+
+    // Envoi de la requête à Django en arrière-plan
+    let contactId = leadDeplace.contact;
+    if (typeof contactId === 'object' && contactId !== null) {
+      contactId = contactId.id;
+    }
+
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/leads/${leadId}/`, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+        },
+        body: JSON.stringify({
+          titre: leadDeplace.titre,
+          statut: nouveauStatut, // Le fameux nouveau statut !
+          valeur_estimee: leadDeplace.valeur_estimee !== '' && leadDeplace.valeur_estimee !== null ? parseFloat(leadDeplace.valeur_estimee) : null,
+          contact: parseInt(contactId, 10)
+        }),
+      });
+
+      if (!response.ok) throw new Error("Erreur de sauvegarde lors du déplacement");
+    } catch (err) {
+      console.error(err);
+      alert("Le serveur n'a pas pu enregistrer le déplacement.");
+      fetchData(); // En cas d'erreur, on recharge les vraies données
+    }
+  };
+
+  // ==========================================
+
+  // --- LOGIQUE DE CRÉATION ---
   const handleAddChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
   const handleCreateSubmit = async (e) => {
@@ -81,9 +136,7 @@ export default function LeadsPipelinePage() {
     let finalContactId = null;
 
     try {
-      // ÉTAPE 1 : Gérer le contact (Existant ou Création)
       if (isNewContact) {
-        // On crée d'abord le contact dans la base de données
         if (!formData.newContactNom || !formData.newContactEmail) {
           throw new Error("Le nom et l'email du nouveau contact sont obligatoires.");
         }
@@ -101,28 +154,18 @@ export default function LeadsPipelinePage() {
           })
         });
 
-        if (!contactRes.ok) {
-          const errData = await contactRes.json();
-          let errorMsg = "Erreur création contact";
-          if (typeof errData === 'object') {
-            errorMsg = Object.entries(errData).map(([k, v]) => `${k}: ${v}`).join(" | ");
-          }
-          throw new Error(`Impossible de créer le contact : ${errorMsg}`);
-        }
-
+        if (!contactRes.ok) throw new Error(`Impossible de créer le contact.`);
         const newContactData = await contactRes.json();
-        finalContactId = newContactData.id; // On récupère le super ID fraîchement créé !
+        finalContactId = newContactData.id;
 
       } else {
-        // On utilise le contact sélectionné dans la liste
         if (!formData.contact || formData.contact === "") {
-          throw new Error("Veuillez sélectionner un contact dans la liste ou choisir d'en créer un.");
+          throw new Error("Veuillez sélectionner un contact dans la liste.");
         }
         finalContactId = parseInt(formData.contact, 10);
-        if (isNaN(finalContactId)) throw new Error("L'identifiant du contact est invalide.");
+        if (isNaN(finalContactId)) throw new Error("Identifiant invalide.");
       }
 
-      // ÉTAPE 2 : Créer le Lead avec le bon ID de contact
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/leads/`, {
         method: 'POST',
         headers: { 
@@ -137,21 +180,13 @@ export default function LeadsPipelinePage() {
         }),
       });
 
-      if (!response.ok) {
-        const errData = await response.json();
-        let errorMsg = "Erreur serveur";
-        if (typeof errData === 'object') {
-          errorMsg = Object.entries(errData).map(([k, v]) => `${k}: ${v}`).join(" | ");
-        }
-        throw new Error(`Refusé : ${errorMsg}`);
-      }
+      if (!response.ok) throw new Error(`Refusé par le serveur.`);
 
       setSubmitSuccess(true);
       fetchData();
       setTimeout(() => {
         setShowAddForm(false);
         setSubmitSuccess(false);
-        // On réinitialise tout
         setFormData({ 
           titre: '', statut: 'NOUVEAU', valeur_estimee: '', contact: '',
           newContactNom: '', newContactEmail: '', newContactTelephone: ''
@@ -159,9 +194,7 @@ export default function LeadsPipelinePage() {
         setIsNewContact(false);
       }, 1500);
 
-    } catch (err) { 
-      setSubmitError(err.message); 
-    }
+    } catch (err) { setSubmitError(err.message); }
   };
 
   // --- LOGIQUE DE MODIFICATION ET SUPPRESSION ---
@@ -174,10 +207,7 @@ export default function LeadsPipelinePage() {
     setEditError(null);
 
     let contactId = selectedLead.contact;
-    if (typeof contactId === 'object' && contactId !== null) {
-      contactId = contactId.id;
-    }
-    contactId = parseInt(contactId, 10);
+    if (typeof contactId === 'object' && contactId !== null) contactId = contactId.id;
 
     try {
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/leads/${selectedLead.id}/`, {
@@ -190,25 +220,16 @@ export default function LeadsPipelinePage() {
           titre: selectedLead.titre,
           statut: selectedLead.statut,
           valeur_estimee: selectedLead.valeur_estimee !== '' && selectedLead.valeur_estimee !== null ? parseFloat(selectedLead.valeur_estimee) : null,
-          contact: contactId 
+          contact: parseInt(contactId, 10) 
         }),
       });
 
-      if (!response.ok) {
-        const errData = await response.json();
-        let errorMsg = "Erreur de mise à jour";
-        if (typeof errData === 'object') {
-          errorMsg = Object.entries(errData).map(([k, v]) => `${k}: ${v}`).join(" | ");
-        }
-        throw new Error(`Refusé : ${errorMsg}`);
-      }
+      if (!response.ok) throw new Error(`Refusé par le serveur.`);
 
       setShowEditModal(false);
       setSelectedLead(null);
       fetchData(); 
-    } catch (err) {
-      setEditError(err.message);
-    }
+    } catch (err) { setEditError(err.message); }
   };
 
   const handleDelete = async (id) => {
@@ -244,7 +265,7 @@ export default function LeadsPipelinePage() {
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Pipeline de Vente</h1>
-          <p className="text-gray-500 text-sm mt-1">Suivi des étapes du cycle de vente</p>
+          <p className="text-gray-500 text-sm mt-1">Suivi des étapes du cycle de vente (Glissez-déposez les cartes)</p>
         </div>
         <button onClick={() => setShowAddForm(true)} className="bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-700 transition">
           + Ajouter un Lead
@@ -268,62 +289,34 @@ export default function LeadsPipelinePage() {
                   <input type="text" name="titre" required value={formData.titre} onChange={handleAddChange} className="w-full border rounded px-3 py-2 focus:border-blue-500 outline-none" placeholder="Ex: Vente licences SaaS" />
                 </div>
                 
-                {/* --- SÉLECTEUR : CONTACT EXISTANT OU NOUVEAU CONTACT --- */}
                 <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mt-4 mb-4">
                   <div className="flex space-x-4 mb-4 border-b border-gray-200 pb-3">
                     <label className="flex items-center cursor-pointer">
-                      <input 
-                        type="radio" 
-                        name="contactMode" 
-                        checked={!isNewContact} 
-                        onChange={() => setIsNewContact(false)} 
-                        className="mr-2 text-blue-600 focus:ring-blue-500"
-                      />
+                      <input type="radio" name="contactMode" checked={!isNewContact} onChange={() => setIsNewContact(false)} className="mr-2 text-blue-600" />
                       <span className="text-sm font-medium text-gray-700">Client existant</span>
                     </label>
                     <label className="flex items-center cursor-pointer">
-                      <input 
-                        type="radio" 
-                        name="contactMode" 
-                        checked={isNewContact} 
-                        onChange={() => setIsNewContact(true)} 
-                        className="mr-2 text-blue-600 focus:ring-blue-500"
-                      />
+                      <input type="radio" name="contactMode" checked={isNewContact} onChange={() => setIsNewContact(true)} className="mr-2 text-blue-600" />
                       <span className="text-sm font-medium text-gray-700">Nouveau client</span>
                     </label>
                   </div>
 
                   {!isNewContact ? (
                     <div>
-                      <select 
-                        name="contact" 
-                        required={!isNewContact} 
-                        value={formData.contact} 
-                        onChange={handleAddChange} 
-                        className="w-full border rounded px-3 py-2 bg-white focus:border-blue-500 outline-none"
-                      >
+                      <select name="contact" required={!isNewContact} value={formData.contact} onChange={handleAddChange} className="w-full border rounded px-3 py-2 bg-white focus:border-blue-500 outline-none">
                         <option value="" disabled>-- Sélectionnez un contact --</option>
                         {contacts.map((c) => <option key={c.id} value={c.id}>{c.nom} ({c.email})</option>)}
                       </select>
-                      {contacts.length === 0 && (
-                        <p className="text-xs text-red-500 mt-1">Aucun contact trouvé, veuillez créer un nouveau client.</p>
-                      )}
+                      {contacts.length === 0 && <p className="text-xs text-red-500 mt-1">Aucun contact trouvé, veuillez créer un nouveau client.</p>}
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      <div>
-                        <input type="text" name="newContactNom" required={isNewContact} value={formData.newContactNom} onChange={handleAddChange} placeholder="Nom complet *" className="w-full border rounded px-3 py-2 focus:border-blue-500 outline-none text-sm" />
-                      </div>
-                      <div>
-                        <input type="email" name="newContactEmail" required={isNewContact} value={formData.newContactEmail} onChange={handleAddChange} placeholder="Adresse Email *" className="w-full border rounded px-3 py-2 focus:border-blue-500 outline-none text-sm" />
-                      </div>
-                      <div>
-                        <input type="text" name="newContactTelephone" value={formData.newContactTelephone} onChange={handleAddChange} placeholder="Téléphone (optionnel)" className="w-full border rounded px-3 py-2 focus:border-blue-500 outline-none text-sm" />
-                      </div>
+                      <div><input type="text" name="newContactNom" required={isNewContact} value={formData.newContactNom} onChange={handleAddChange} placeholder="Nom complet *" className="w-full border rounded px-3 py-2 focus:border-blue-500 outline-none text-sm" /></div>
+                      <div><input type="email" name="newContactEmail" required={isNewContact} value={formData.newContactEmail} onChange={handleAddChange} placeholder="Adresse Email *" className="w-full border rounded px-3 py-2 focus:border-blue-500 outline-none text-sm" /></div>
+                      <div><input type="text" name="newContactTelephone" value={formData.newContactTelephone} onChange={handleAddChange} placeholder="Téléphone (optionnel)" className="w-full border rounded px-3 py-2 focus:border-blue-500 outline-none text-sm" /></div>
                     </div>
                   )}
                 </div>
-                {/* ------------------------------------------------------- */}
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -343,7 +336,7 @@ export default function LeadsPipelinePage() {
 
                 <div className="flex justify-end space-x-2 pt-4 border-t mt-6">
                   <button type="button" onClick={() => setShowAddForm(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Annuler</button>
-                  <button type="submit" className="px-4 py-2 text-white rounded shadow-sm bg-blue-600 hover:bg-blue-700">Enregistrer</button>
+                  <button type="submit" disabled={contacts.length === 0 && !isNewContact} className="px-4 py-2 text-white rounded shadow-sm bg-blue-600 hover:bg-blue-700">Enregistrer</button>
                 </div>
               </form>
             )}
@@ -351,7 +344,7 @@ export default function LeadsPipelinePage() {
         </div>
       )}
 
-      {/* --- MODALE DE MODIFICATION (inchangée) --- */}
+      {/* --- MODALE DE MODIFICATION --- */}
       {showEditModal && selectedLead && (
         <div className="fixed inset-0 bg-white/30 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-xl shadow-2xl border border-gray-200 w-96">
@@ -368,7 +361,7 @@ export default function LeadsPipelinePage() {
                 <input type="number" name="valeur_estimee" value={selectedLead.valeur_estimee !== null ? selectedLead.valeur_estimee : ''} onChange={handleEditChange} className="w-full border rounded px-3 py-2" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Statut (Changer de colonne)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Statut</label>
                 <select name="statut" value={selectedLead.statut} onChange={handleEditChange} className="w-full border rounded px-3 py-2 bg-white font-semibold text-blue-600">
                   <option value="NOUVEAU">Nouveau</option>
                   <option value="EN_COURS">En cours</option>
@@ -391,13 +384,19 @@ export default function LeadsPipelinePage() {
         </div>
       )}
 
-      {/* --- VUE KANBAN --- */}
+      {/* --- VUE KANBAN AVEC DRAG AND DROP --- */}
       {loading ? (
         <div className="flex-1 flex items-center justify-center text-gray-500">Chargement du pipeline...</div>
       ) : (
         <div className="flex-1 flex gap-6 overflow-x-auto pb-4">
           {colonnes.map((colonne) => (
-            <div key={colonne.id} className="w-80 flex-shrink-0 flex flex-col bg-gray-100 rounded-lg p-4">
+            <div 
+              key={colonne.id} 
+              className="w-80 flex-shrink-0 flex flex-col bg-gray-100 rounded-lg p-4"
+              /* --- ÉVÉNEMENTS DE DÉPÔT SUR LA COLONNE --- */
+              onDragOver={handleDragOver}
+              onDrop={(e) => handleDrop(e, colonne.id)}
+            >
               <div className={`border-t-4 ${colonne.couleur} pt-2 mb-4 flex justify-between items-center`}>
                 <h2 className="font-bold text-gray-700">{colonne.titre}</h2>
                 <span className="bg-gray-200 text-gray-600 text-xs font-bold px-2 py-1 rounded-full">
@@ -405,9 +404,15 @@ export default function LeadsPipelinePage() {
                 </span>
               </div>
               
-              <div className="flex-1 overflow-y-auto space-y-3">
+              <div className="flex-1 overflow-y-auto space-y-3 min-h-[150px]">
                 {getLeadsByStatus(colonne.id).map((lead) => (
-                  <div key={lead.id} className="bg-white p-4 rounded shadow-sm border border-gray-200 cursor-pointer hover:shadow-md transition">
+                  <div 
+                    key={lead.id} 
+                    /* --- LA CARTE DEVIENT GLISSABLE --- */
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, lead.id)}
+                    className="bg-white p-4 rounded shadow-sm border border-gray-200 cursor-grab active:cursor-grabbing hover:shadow-md transition"
+                  >
                     <h3 className="font-semibold text-gray-800 text-sm mb-1">{lead.titre}</h3>
                     <p className="text-green-600 font-bold text-sm mb-2">
                       {lead.valeur_estimee ? `${lead.valeur_estimee} EUR` : 'Valeur non définie'}
@@ -424,7 +429,7 @@ export default function LeadsPipelinePage() {
                   </div>
                 ))}
                 {getLeadsByStatus(colonne.id).length === 0 && (
-                  <div className="text-center text-sm text-gray-400 py-4 italic">Aucun lead</div>
+                  <div className="text-center text-sm text-gray-400 py-4 italic pointer-events-none">Déposez un lead ici</div>
                 )}
               </div>
             </div>
