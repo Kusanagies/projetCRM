@@ -72,8 +72,8 @@ class TacheSerializer(serializers.ModelSerializer):
         read_only_fields = ['commercial']
     
 class ManageUserSerializer(serializers.ModelSerializer):
-    # On va chercher le rôle dans le profil lié
-    role = serializers.CharField(source='profile.role')
+    # required=False évite les erreurs si on n'envoie pas le rôle
+    role = serializers.CharField(source='profile.role', required=False)
 
     class Meta:
         model = User
@@ -84,10 +84,14 @@ class ManageUserSerializer(serializers.ModelSerializer):
         instance.is_active = validated_data.get('is_active', instance.is_active)
         instance.save()
 
-        # 2. Mise à jour du rôle dans le UserProfile
+        # 2. Mise à jour sécurisée du rôle
         profile_data = validated_data.get('profile', {})
         if 'role' in profile_data:
-            instance.profile.role = profile_data['role']
-            instance.profile.save()
+            from .models import UserProfile # Import local par sécurité
+            
+            # La magie est ici : get_or_create fabrique le profil s'il n'existe pas !
+            profile, created = UserProfile.objects.get_or_create(user=instance)
+            profile.role = profile_data['role']
+            profile.save()
 
         return instance
