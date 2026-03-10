@@ -4,6 +4,11 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from django.db.models import Sum
 
+from rest_framework import generics
+from rest_framework.permissions import AllowAny
+from django.contrib.auth.models import User
+from .serializers import RegisterSerializer, UserSerializer
+
 from .models import Entreprise, Contact, Lead, AutomationRule
 from .serializers import EntrepriseSerializer, ContactSerializer, LeadSerializer, AutomationRuleSerializer
 from .utils import envoyer_email_bienvenue, envoyer_email_automatique, get_brevo_stats
@@ -86,3 +91,14 @@ def dashboard_stats(request):
         'contacts_recents': list(contacts_recents),
         'email_stats': email_stats  # On envoie les stats au frontend !
     })
+
+class RegisterView(generics.CreateAPIView):
+    queryset = User.objects.all()
+    permission_classes = [AllowAny] # Permet aux non-connectés de s'inscrire
+    serializer_class = RegisterSerializer
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def current_user(request):
+    serializer = UserSerializer(request.user)
+    return Response(serializer.data)

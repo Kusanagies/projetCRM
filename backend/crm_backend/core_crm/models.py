@@ -64,3 +64,18 @@ class AutomationRule(models.Model):
 
     def __str__(self):
         return f"Règle: {self.statut_declencheur} - Actif: {self.actif}"
+    
+# Ajoutez cette classe tout en bas de models.py
+class UserProfile(models.Model):
+    ROLE_CHOICES = [
+        ('ADMIN', 'Administrateur'),
+        ('COMMERCIAL', 'Commercial'),
+        ('STANDARD', 'Utilisateur standard'),
+    ]
+    
+    # On lie ce profil au modèle User par défaut de Django
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='STANDARD')
+
+    def __str__(self):
+        return f"{self.user.username} - {self.get_role_display()}"

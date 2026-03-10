@@ -87,6 +87,12 @@ export default function LoginPage() {
           >
             Se connecter
           </button>
+          <div className="mt-6 text-center text-sm text-gray-600">
+            Pas encore de compte ?{' '}
+            <Link href="/register" className="text-blue-600 hover:underline font-semibold">
+            S'inscrire
+            </Link>
+          </div>
         </form>
       </div>
     </div>
