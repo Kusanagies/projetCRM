@@ -1,7 +1,6 @@
 import os
 import requests
 
-# PENSEZ À CHANGER CETTE VARIABLE PAR VOTRE VRAIE ADRESSE EMAIL BREVO
 SENDER_EMAIL = "sylvainhuang3@gmail.com"
 
 def envoyer_email_bienvenue(email_destinataire, nom_destinataire):
@@ -66,7 +65,7 @@ def envoyer_email_automatique(email_destinataire, nom_destinataire, sujet, messa
     html_content = f"<html><body><p>{message_texte.replace(chr(10), '<br>')}</p></body></html>"
 
     payload = {
-        "sender": {"name": "L'équipe", "email": SENDER_EMAIL}, # Utilisez votre SENDER_EMAIL défini plus haut
+        "sender": {"name": "L'équipe", "email": SENDER_EMAIL}, 
         "to": [{"email": email_destinataire, "name": nom_destinataire}],
         "subject": sujet,
         "htmlContent": html_content
