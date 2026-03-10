@@ -25,7 +25,14 @@ export default function DashboardPage() {
         });
 
         if (!response.ok) {
-          throw new Error('Erreur de session');
+          if (response.status === 401) {
+            throw new Error('Erreur de session'); // C'est bien le token qui est expiré
+          } else {
+            // C'est une vraie erreur de code côté Django, on l'affiche dans la console !
+            const errText = await response.text();
+            console.error("Crash Django :", errText);
+            throw new Error('Erreur serveur interne');
+          }
         }
 
         const data = await response.json();

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Entreprise, Contact, Lead, AutomationRule
+from .models import Entreprise, Contact, Lead, AutomationRule, UserProfile
 from django.contrib.auth.models import User
 
 class EntrepriseSerializer(serializers.ModelSerializer):
@@ -23,11 +23,22 @@ class AutomationRuleSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class UserSerializer(serializers.ModelSerializer):
-    role = serializers.CharField(source='profile.role', read_only=True)
+    # On utilise un champ sur-mesure au lieu d'un simple read_only
+    role = serializers.SerializerMethodField()
     
     class Meta:
         model = User
         fields = ['id', 'username', 'email', 'role']
+
+    def get_role(self, obj):
+        # On vérifie si l'utilisateur possède un profil
+        if hasattr(obj, 'profile'):
+            return obj.profile.role
+        # Si c'est un vieil administrateur créé dans la console, on lui donne le rôle ADMIN par défaut
+        if obj.is_superuser:
+            return 'ADMIN'
+        # Sinon, standard
+        return 'STANDARD'
 
 class RegisterSerializer(serializers.ModelSerializer):
     role = serializers.ChoiceField(choices=[('ADMIN', 'Admin'), ('COMMERCIAL', 'Commercial'), ('STANDARD', 'Standard')], write_only=True, required=False)
