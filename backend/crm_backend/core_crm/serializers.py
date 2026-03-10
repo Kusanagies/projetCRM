@@ -70,4 +70,24 @@ class TacheSerializer(serializers.ModelSerializer):
         model = Tache
         fields = '__all__'
         read_only_fields = ['commercial']
-        
+    
+class ManageUserSerializer(serializers.ModelSerializer):
+    # On va chercher le rôle dans le profil lié
+    role = serializers.CharField(source='profile.role')
+
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email', 'is_active', 'role']
+
+    def update(self, instance, validated_data):
+        # 1. Mise à jour de l'accès (Actif / Suspendu)
+        instance.is_active = validated_data.get('is_active', instance.is_active)
+        instance.save()
+
+        # 2. Mise à jour du rôle dans le UserProfile
+        profile_data = validated_data.get('profile', {})
+        if 'role' in profile_data:
+            instance.profile.role = profile_data['role']
+            instance.profile.save()
+
+        return instance

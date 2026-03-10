@@ -10,7 +10,8 @@ from .views import (
     advanced_stats,
     RegisterView,
     current_user,
-    get_commercials
+    get_commercials,
+    UserManagementViewSet
 )
 
 # 1. Le routeur automatique pour les CRUD (Créer, Lire, Modifier, Supprimer)
@@ -20,6 +21,7 @@ router.register(r'contacts', ContactViewSet)
 router.register(r'leads', LeadViewSet)
 router.register(r'automations', AutomationRuleViewSet)
 router.register(r'taches', TacheViewSet)
+router.register(r'equipe', UserManagementViewSet, basename='equipe')
 
 # 2. Les routes manuelles (pour nos fonctions spéciales)
 urlpatterns = [

@@ -58,6 +58,9 @@ export default function RootLayout({ children }) {
               <Link href="/statistiques" className={`block px-4 py-3 rounded-lg transition font-medium ${pathname === '/statistiques' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}>
                 Statistiques
               </Link>
+              <Link href="/equipe" className={`block px-4 py-3 rounded-lg transition font-medium ${pathname === '/equipe' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}>
+                Gestion d'Équipe
+              </Link>
             </nav>
 
             {/* Bouton Déconnexion en bas */}

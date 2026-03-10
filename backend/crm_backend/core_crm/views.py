@@ -9,6 +9,8 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from django.contrib.auth.models import User
+from rest_framework.exceptions import PermissionDenied
+from .serializers import ManageUserSerializer
 
 from .models import Entreprise, Contact, Lead, AutomationRule, Tache, UserProfile
 from .serializers import (
@@ -199,3 +201,17 @@ def advanced_stats(request):
         # En cas de crash, on renvoie une belle erreur JSON compréhensible !
         print(f"Erreur Statistiques: {traceback.format_exc()}")
         return Response({'erreur': str(e), 'details': traceback.format_exc()}, status=500)
+    
+class UserManagementViewSet(viewsets.ModelViewSet):
+    queryset = User.objects.all().order_by('-date_joined')
+    serializer_class = ManageUserSerializer
+    permission_classes = [IsAuthenticated]
+
+    # SÉCURITÉ : On vérifie que celui qui fait la requête est bien un ADMIN
+    def check_permissions(self, request):
+        super().check_permissions(request)
+        try:
+            if request.user.profile.role != 'ADMIN':
+                raise PermissionDenied("Accès refusé. Réservé aux administrateurs.")
+        except:
+            raise PermissionDenied("Profil introuvable.")
