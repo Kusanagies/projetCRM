@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 export default function LeadsPipelinePage() {
   const [leads, setLeads] = useState([]);
   const [contacts, setContacts] = useState([]);
+  const [commercials, setCommercials] = useState([]); // NOUVEAU : Liste des commerciaux
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
@@ -13,7 +14,7 @@ export default function LeadsPipelinePage() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [isNewContact, setIsNewContact] = useState(false); 
   const [formData, setFormData] = useState({ 
-    titre: '', statut: 'NOUVEAU', valeur_estimee: '', contact: '',
+    titre: '', statut: 'NOUVEAU', valeur_estimee: '', contact: '', commercial_assigne: '',
     newContactNom: '', newContactEmail: '', newContactTelephone: ''
   });
   const [submitError, setSubmitError] = useState(null);
@@ -29,26 +30,29 @@ export default function LeadsPipelinePage() {
     if (!token) { router.push('/login'); return; }
 
     try {
+      // 1. Charger les leads
       const leadsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/leads/`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!leadsRes.ok) throw new Error("Session expirée");
-      
       const leadsData = await leadsRes.json();
-      if (Array.isArray(leadsData)) {
-        setLeads(leadsData);
-      } else if (leadsData && Array.isArray(leadsData.results)) {
-        setLeads(leadsData.results);
-      } else {
-        setLeads([]);
-      }
+      setLeads(Array.isArray(leadsData) ? leadsData : (leadsData.results || []));
 
+      // 2. Charger les contacts
       const contactsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/contacts/`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (contactsRes.ok) {
         const contactsData = await contactsRes.json();
         setContacts(Array.isArray(contactsData) ? contactsData : (contactsData.results || []));
+      }
+
+      // 3. Charger les commerciaux
+      const commRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/commercials/`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (commRes.ok) {
+        setCommercials(await commRes.json());
       }
       
       setLoading(false);
@@ -61,46 +65,26 @@ export default function LeadsPipelinePage() {
 
   useEffect(() => { fetchData(); }, [router]);
 
-  // ==========================================
-  // NOUVEAU : LOGIQUE DE DRAG AND DROP
-  // ==========================================
-  
-  // 1. Quand on attrape une carte
-  const handleDragStart = (e, leadId) => {
-    e.dataTransfer.setData('leadId', leadId.toString());
+  // Utilitaire pour afficher le nom du commercial sur la carte
+  const getCommercialName = (id) => {
+    if (!id) return 'Non assigné';
+    const comm = commercials.find(c => c.id === id);
+    return comm ? comm.username : 'Inconnu';
   };
 
-  // 2. Pour autoriser le dépôt sur une colonne
-  const handleDragOver = (e) => {
-    e.preventDefault(); 
-  };
-
-  // 3. Quand on lâche la carte dans une nouvelle colonne
+  // --- LOGIQUE DE DRAG AND DROP ---
+  const handleDragStart = (e, leadId) => e.dataTransfer.setData('leadId', leadId.toString());
+  const handleDragOver = (e) => e.preventDefault(); 
   const handleDrop = async (e, nouveauStatut) => {
     e.preventDefault();
-    const leadIdStr = e.dataTransfer.getData('leadId');
-    if (!leadIdStr) return;
-
-    const leadId = parseInt(leadIdStr, 10);
+    const leadId = parseInt(e.dataTransfer.getData('leadId'), 10);
     const leadDeplace = leads.find(l => l.id === leadId);
-
-    // Si on lâche dans la même colonne, on ne fait rien
     if (!leadDeplace || leadDeplace.statut === nouveauStatut) return;
 
-    // Mise à jour visuelle instantanée (Optimistic UI) pour que ce soit fluide
-    const leadsMisesAJour = leads.map(l => 
-      l.id === leadId ? { ...l, statut: nouveauStatut } : l
-    );
-    setLeads(leadsMisesAJour);
-
-    // Envoi de la requête à Django en arrière-plan
-    let contactId = leadDeplace.contact;
-    if (typeof contactId === 'object' && contactId !== null) {
-      contactId = contactId.id;
-    }
+    setLeads(leads.map(l => l.id === leadId ? { ...l, statut: nouveauStatut } : l));
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/leads/${leadId}/`, {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/leads/${leadId}/`, {
         method: 'PUT',
         headers: { 
           'Content-Type': 'application/json',
@@ -108,21 +92,17 @@ export default function LeadsPipelinePage() {
         },
         body: JSON.stringify({
           titre: leadDeplace.titre,
-          statut: nouveauStatut, // Le fameux nouveau statut !
-          valeur_estimee: leadDeplace.valeur_estimee !== '' && leadDeplace.valeur_estimee !== null ? parseFloat(leadDeplace.valeur_estimee) : null,
-          contact: parseInt(contactId, 10)
+          statut: nouveauStatut,
+          valeur_estimee: leadDeplace.valeur_estimee,
+          contact: leadDeplace.contact?.id || leadDeplace.contact,
+          commercial_assigne: leadDeplace.commercial_assigne
         }),
       });
-
-      if (!response.ok) throw new Error("Erreur de sauvegarde lors du déplacement");
     } catch (err) {
       console.error(err);
-      alert("Le serveur n'a pas pu enregistrer le déplacement.");
-      fetchData(); // En cas d'erreur, on recharge les vraies données
+      fetchData(); 
     }
   };
-
-  // ==========================================
 
   // --- LOGIQUE DE CRÉATION ---
   const handleAddChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -137,95 +117,64 @@ export default function LeadsPipelinePage() {
 
     try {
       if (isNewContact) {
-        if (!formData.newContactNom || !formData.newContactEmail) {
-          throw new Error("Le nom et l'email du nouveau contact sont obligatoires.");
-        }
-
+        if (!formData.newContactNom || !formData.newContactEmail) throw new Error("Nom et email obligatoires.");
         const contactRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/contacts/`, {
           method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({
-            nom: formData.newContactNom,
-            email: formData.newContactEmail,
-            telephone: formData.newContactTelephone
-          })
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ nom: formData.newContactNom, email: formData.newContactEmail, telephone: formData.newContactTelephone })
         });
-
-        if (!contactRes.ok) throw new Error(`Impossible de créer le contact.`);
-        const newContactData = await contactRes.json();
-        finalContactId = newContactData.id;
-
+        if (!contactRes.ok) throw new Error("Erreur création contact");
+        finalContactId = (await contactRes.json()).id;
       } else {
-        if (!formData.contact || formData.contact === "") {
-          throw new Error("Veuillez sélectionner un contact dans la liste.");
-        }
+        if (!formData.contact) throw new Error("Sélectionnez un contact.");
         finalContactId = parseInt(formData.contact, 10);
-        if (isNaN(finalContactId)) throw new Error("Identifiant invalide.");
       }
 
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/leads/`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({
           titre: formData.titre,
           statut: formData.statut,
-          valeur_estimee: formData.valeur_estimee !== '' ? parseFloat(formData.valeur_estimee) : null,
-          contact: finalContactId
+          valeur_estimee: formData.valeur_estimee ? parseFloat(formData.valeur_estimee) : null,
+          contact: finalContactId,
+          commercial_assigne: formData.commercial_assigne ? parseInt(formData.commercial_assigne, 10) : null
         }),
       });
 
-      if (!response.ok) throw new Error(`Refusé par le serveur.`);
+      if (!response.ok) throw new Error("Erreur serveur lors de la création.");
 
       setSubmitSuccess(true);
       fetchData();
       setTimeout(() => {
         setShowAddForm(false);
         setSubmitSuccess(false);
-        setFormData({ 
-          titre: '', statut: 'NOUVEAU', valeur_estimee: '', contact: '',
-          newContactNom: '', newContactEmail: '', newContactTelephone: ''
-        });
+        setFormData({ titre: '', statut: 'NOUVEAU', valeur_estimee: '', contact: '', commercial_assigne: '', newContactNom: '', newContactEmail: '', newContactTelephone: ''});
         setIsNewContact(false);
       }, 1500);
-
     } catch (err) { setSubmitError(err.message); }
   };
 
-  // --- LOGIQUE DE MODIFICATION ET SUPPRESSION ---
-  const handleEditChange = (e) => {
-    setSelectedLead({ ...selectedLead, [e.target.name]: e.target.value });
-  };
+  // --- LOGIQUE DE MODIFICATION ---
+  const handleEditChange = (e) => setSelectedLead({ ...selectedLead, [e.target.name]: e.target.value });
 
   const handleUpdateSubmit = async (e) => {
     e.preventDefault();
     setEditError(null);
 
-    let contactId = selectedLead.contact;
-    if (typeof contactId === 'object' && contactId !== null) contactId = contactId.id;
-
     try {
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/leads/${selectedLead.id}/`, {
         method: 'PUT',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('access_token')}` },
         body: JSON.stringify({
           titre: selectedLead.titre,
           statut: selectedLead.statut,
-          valeur_estimee: selectedLead.valeur_estimee !== '' && selectedLead.valeur_estimee !== null ? parseFloat(selectedLead.valeur_estimee) : null,
-          contact: parseInt(contactId, 10) 
+          valeur_estimee: selectedLead.valeur_estimee ? parseFloat(selectedLead.valeur_estimee) : null,
+          contact: selectedLead.contact?.id || selectedLead.contact,
+          commercial_assigne: selectedLead.commercial_assigne ? parseInt(selectedLead.commercial_assigne, 10) : null
         }),
       });
-
-      if (!response.ok) throw new Error(`Refusé par le serveur.`);
-
+      if (!response.ok) throw new Error("Erreur de mise à jour");
       setShowEditModal(false);
       setSelectedLead(null);
       fetchData(); 
@@ -233,28 +182,18 @@ export default function LeadsPipelinePage() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm("Voulez-vous vraiment supprimer cette opportunité ?")) return;
-
+    if (!window.confirm("Supprimer ?")) return;
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/leads/${id}/`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
-      });
-      if (!response.ok) throw new Error("Erreur de suppression");
-
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/leads/${id}/`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }});
       setShowEditModal(false);
       setSelectedLead(null);
       fetchData();
     } catch (err) { alert(err.message); }
   };
 
-  const getLeadsByStatus = (status) => {
-    if (!Array.isArray(leads)) return [];
-    return leads.filter(lead => lead.statut === status);
-  };
-
+  const getLeadsByStatus = (status) => leads.filter(lead => lead.statut === status);
   const colonnes = [
-    { id: 'NOUVEAU', titre: 'Nouveaux prospects', couleur: 'border-blue-500' },
+    { id: 'NOUVEAU', titre: 'Nouveaux', couleur: 'border-blue-500' },
     { id: 'EN_COURS', titre: 'En cours', couleur: 'border-yellow-500' },
     { id: 'CONVERTI', titre: 'Convertis', couleur: 'border-green-500' },
     { id: 'PERDU', titre: 'Perdus', couleur: 'border-red-500' }
@@ -265,9 +204,9 @@ export default function LeadsPipelinePage() {
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Pipeline de Vente</h1>
-          <p className="text-gray-500 text-sm mt-1">Suivi des étapes du cycle de vente (Glissez-déposez les cartes)</p>
+          <p className="text-gray-500 text-sm mt-1">Glissez-déposez les cartes</p>
         </div>
-        <button onClick={() => setShowAddForm(true)} className="bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-700 transition">
+        <button onClick={() => setShowAddForm(true)} className="bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-700">
           + Ajouter un Lead
         </button>
       </div>
@@ -277,55 +216,47 @@ export default function LeadsPipelinePage() {
         <div className="fixed inset-0 bg-white/30 backdrop-blur-sm flex items-center justify-center z-50 overflow-y-auto">
           <div className="bg-white p-6 rounded-xl shadow-2xl border border-gray-200 w-[500px] my-8">
             <h2 className="text-xl font-bold mb-4">Nouvelle Opportunité</h2>
-
             {submitError && <div className="mb-4 p-3 bg-red-50 text-red-600 rounded text-sm">{submitError}</div>}
-            
             {submitSuccess ? (
-              <div className="py-8 text-center"><div className="text-green-600 text-xl font-bold mb-2">Succès !</div></div>
+              <div className="py-8 text-center text-green-600 font-bold">Succès !</div>
             ) : (
               <form onSubmit={handleCreateSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Titre de l'opportunité *</label>
-                  <input type="text" name="titre" required value={formData.titre} onChange={handleAddChange} className="w-full border rounded px-3 py-2 focus:border-blue-500 outline-none" placeholder="Ex: Vente licences SaaS" />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Titre *</label>
+                  <input type="text" name="titre" required value={formData.titre} onChange={handleAddChange} className="w-full border rounded px-3 py-2" />
                 </div>
                 
-                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mt-4 mb-4">
-                  <div className="flex space-x-4 mb-4 border-b border-gray-200 pb-3">
+                {/* Sélecteur de contact */}
+                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                  <div className="flex space-x-4 mb-4 border-b pb-3">
                     <label className="flex items-center cursor-pointer">
-                      <input type="radio" name="contactMode" checked={!isNewContact} onChange={() => setIsNewContact(false)} className="mr-2 text-blue-600" />
-                      <span className="text-sm font-medium text-gray-700">Client existant</span>
+                      <input type="radio" checked={!isNewContact} onChange={() => setIsNewContact(false)} className="mr-2" /> Client existant
                     </label>
                     <label className="flex items-center cursor-pointer">
-                      <input type="radio" name="contactMode" checked={isNewContact} onChange={() => setIsNewContact(true)} className="mr-2 text-blue-600" />
-                      <span className="text-sm font-medium text-gray-700">Nouveau client</span>
+                      <input type="radio" checked={isNewContact} onChange={() => setIsNewContact(true)} className="mr-2" /> Nouveau client
                     </label>
                   </div>
-
                   {!isNewContact ? (
-                    <div>
-                      <select name="contact" required={!isNewContact} value={formData.contact} onChange={handleAddChange} className="w-full border rounded px-3 py-2 bg-white focus:border-blue-500 outline-none">
-                        <option value="" disabled>-- Sélectionnez un contact --</option>
-                        {contacts.map((c) => <option key={c.id} value={c.id}>{c.nom} ({c.email})</option>)}
-                      </select>
-                      {contacts.length === 0 && <p className="text-xs text-red-500 mt-1">Aucun contact trouvé, veuillez créer un nouveau client.</p>}
-                    </div>
+                    <select name="contact" required={!isNewContact} value={formData.contact} onChange={handleAddChange} className="w-full border rounded px-3 py-2 bg-white">
+                      <option value="" disabled>-- Sélectionnez un contact --</option>
+                      {contacts.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}
+                    </select>
                   ) : (
                     <div className="space-y-3">
-                      <div><input type="text" name="newContactNom" required={isNewContact} value={formData.newContactNom} onChange={handleAddChange} placeholder="Nom complet *" className="w-full border rounded px-3 py-2 focus:border-blue-500 outline-none text-sm" /></div>
-                      <div><input type="email" name="newContactEmail" required={isNewContact} value={formData.newContactEmail} onChange={handleAddChange} placeholder="Adresse Email *" className="w-full border rounded px-3 py-2 focus:border-blue-500 outline-none text-sm" /></div>
-                      <div><input type="text" name="newContactTelephone" value={formData.newContactTelephone} onChange={handleAddChange} placeholder="Téléphone (optionnel)" className="w-full border rounded px-3 py-2 focus:border-blue-500 outline-none text-sm" /></div>
+                      <input type="text" name="newContactNom" required={isNewContact} value={formData.newContactNom} onChange={handleAddChange} placeholder="Nom *" className="w-full border rounded px-3 py-2 text-sm" />
+                      <input type="email" name="newContactEmail" required={isNewContact} value={formData.newContactEmail} onChange={handleAddChange} placeholder="Email *" className="w-full border rounded px-3 py-2 text-sm" />
                     </div>
                   )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Valeur estimée (EUR)</label>
-                    <input type="number" name="valeur_estimee" value={formData.valeur_estimee} onChange={handleAddChange} className="w-full border rounded px-3 py-2 focus:border-blue-500 outline-none" placeholder="Ex: 5000" />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Valeur estimée</label>
+                    <input type="number" name="valeur_estimee" value={formData.valeur_estimee} onChange={handleAddChange} className="w-full border rounded px-3 py-2" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Statut initial</label>
-                    <select name="statut" value={formData.statut} onChange={handleAddChange} className="w-full border rounded px-3 py-2 bg-white focus:border-blue-500 outline-none">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Statut</label>
+                    <select name="statut" value={formData.statut} onChange={handleAddChange} className="w-full border rounded px-3 py-2 bg-white">
                       <option value="NOUVEAU">Nouveau</option>
                       <option value="EN_COURS">En cours</option>
                       <option value="CONVERTI">Converti</option>
@@ -334,9 +265,18 @@ export default function LeadsPipelinePage() {
                   </div>
                 </div>
 
+                {/* SÉLECTEUR DE COMMERCIAL */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Attribuer à un commercial</label>
+                  <select name="commercial_assigne" value={formData.commercial_assigne} onChange={handleAddChange} className="w-full border rounded px-3 py-2 bg-white">
+                    <option value="">-- Non assigné --</option>
+                    {commercials.map(c => <option key={c.id} value={c.id}>{c.username} ({c.role})</option>)}
+                  </select>
+                </div>
+
                 <div className="flex justify-end space-x-2 pt-4 border-t mt-6">
                   <button type="button" onClick={() => setShowAddForm(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Annuler</button>
-                  <button type="submit" disabled={contacts.length === 0 && !isNewContact} className="px-4 py-2 text-white rounded shadow-sm bg-blue-600 hover:bg-blue-700">Enregistrer</button>
+                  <button type="submit" className="px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded">Enregistrer</button>
                 </div>
               </form>
             )}
@@ -349,34 +289,28 @@ export default function LeadsPipelinePage() {
         <div className="fixed inset-0 bg-white/30 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-xl shadow-2xl border border-gray-200 w-96">
             <h2 className="text-xl font-bold mb-4">Modifier l'opportunité</h2>
-            {editError && <div className="mb-4 p-3 bg-red-50 text-red-600 rounded text-sm">{editError}</div>}
-            
+            {editError && <div className="text-red-600 mb-4">{editError}</div>}
             <form onSubmit={handleUpdateSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Titre *</label>
-                <input type="text" name="titre" required value={selectedLead.titre} onChange={handleEditChange} className="w-full border rounded px-3 py-2" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Valeur estimée (EUR)</label>
-                <input type="number" name="valeur_estimee" value={selectedLead.valeur_estimee !== null ? selectedLead.valeur_estimee : ''} onChange={handleEditChange} className="w-full border rounded px-3 py-2" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Statut</label>
-                <select name="statut" value={selectedLead.statut} onChange={handleEditChange} className="w-full border rounded px-3 py-2 bg-white font-semibold text-blue-600">
-                  <option value="NOUVEAU">Nouveau</option>
-                  <option value="EN_COURS">En cours</option>
-                  <option value="CONVERTI">Converti (Gagné!)</option>
-                  <option value="PERDU">Perdu</option>
-                </select>
-              </div>
+              <input type="text" name="titre" required value={selectedLead.titre} onChange={handleEditChange} className="w-full border rounded px-3 py-2" />
+              <input type="number" name="valeur_estimee" value={selectedLead.valeur_estimee || ''} onChange={handleEditChange} className="w-full border rounded px-3 py-2" />
+              <select name="statut" value={selectedLead.statut} onChange={handleEditChange} className="w-full border rounded px-3 py-2 bg-white">
+                <option value="NOUVEAU">Nouveau</option>
+                <option value="EN_COURS">En cours</option>
+                <option value="CONVERTI">Converti</option>
+                <option value="PERDU">Perdu</option>
+              </select>
               
+              {/* MODIFIER LE COMMERCIAL */}
+              <select name="commercial_assigne" value={selectedLead.commercial_assigne || ''} onChange={handleEditChange} className="w-full border rounded px-3 py-2 bg-white">
+                <option value="">-- Non assigné --</option>
+                {commercials.map(c => <option key={c.id} value={c.id}>{c.username}</option>)}
+              </select>
+
               <div className="flex justify-between pt-4 border-t mt-6">
-                <button type="button" onClick={() => handleDelete(selectedLead.id)} className="px-4 py-2 bg-red-50 text-red-600 hover:bg-red-100 rounded font-medium">
-                  Supprimer
-                </button>
+                <button type="button" onClick={() => handleDelete(selectedLead.id)} className="px-4 py-2 bg-red-50 text-red-600 rounded">Supprimer</button>
                 <div className="flex space-x-2">
-                  <button type="button" onClick={() => setShowEditModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Annuler</button>
-                  <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Mettre à jour</button>
+                  <button type="button" onClick={() => setShowEditModal(false)} className="px-4 py-2 text-gray-600 rounded">Annuler</button>
+                  <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded">Mettre à jour</button>
                 </div>
               </div>
             </form>
@@ -384,53 +318,35 @@ export default function LeadsPipelinePage() {
         </div>
       )}
 
-      {/* --- VUE KANBAN AVEC DRAG AND DROP --- */}
+      {/* --- VUE KANBAN --- */}
       {loading ? (
-        <div className="flex-1 flex items-center justify-center text-gray-500">Chargement du pipeline...</div>
+        <div className="flex-1 flex items-center justify-center">Chargement...</div>
       ) : (
         <div className="flex-1 flex gap-6 overflow-x-auto pb-4">
           {colonnes.map((colonne) => (
-            <div 
-              key={colonne.id} 
-              className="w-80 flex-shrink-0 flex flex-col bg-gray-100 rounded-lg p-4"
-              /* --- ÉVÉNEMENTS DE DÉPÔT SUR LA COLONNE --- */
-              onDragOver={handleDragOver}
-              onDrop={(e) => handleDrop(e, colonne.id)}
-            >
+            <div key={colonne.id} className="w-80 flex-shrink-0 flex flex-col bg-gray-100 rounded-lg p-4" onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, colonne.id)}>
               <div className={`border-t-4 ${colonne.couleur} pt-2 mb-4 flex justify-between items-center`}>
                 <h2 className="font-bold text-gray-700">{colonne.titre}</h2>
-                <span className="bg-gray-200 text-gray-600 text-xs font-bold px-2 py-1 rounded-full">
-                  {getLeadsByStatus(colonne.id).length}
-                </span>
+                <span className="bg-gray-200 text-gray-600 text-xs font-bold px-2 py-1 rounded-full">{getLeadsByStatus(colonne.id).length}</span>
               </div>
               
               <div className="flex-1 overflow-y-auto space-y-3 min-h-[150px]">
                 {getLeadsByStatus(colonne.id).map((lead) => (
-                  <div 
-                    key={lead.id} 
-                    /* --- LA CARTE DEVIENT GLISSABLE --- */
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, lead.id)}
-                    className="bg-white p-4 rounded shadow-sm border border-gray-200 cursor-grab active:cursor-grabbing hover:shadow-md transition"
-                  >
+                  <div key={lead.id} draggable onDragStart={(e) => handleDragStart(e, lead.id)} className="bg-white p-4 rounded shadow-sm border border-gray-200 cursor-grab">
                     <h3 className="font-semibold text-gray-800 text-sm mb-1">{lead.titre}</h3>
-                    <p className="text-green-600 font-bold text-sm mb-2">
-                      {lead.valeur_estimee ? `${lead.valeur_estimee} EUR` : 'Valeur non définie'}
-                    </p>
-                    <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
+                    
+                    {/* AFFICHAGE DU COMMERCIAL */}
+                    <div className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded inline-block mb-2 font-medium">
+                      👤 {getCommercialName(lead.commercial_assigne)}
+                    </div>
+
+                    <p className="text-green-600 font-bold text-sm mb-2">{lead.valeur_estimee ? `${lead.valeur_estimee} €` : '-'}</p>
+                    <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-100 text-xs text-gray-500">
                       <span>[Ref: #{lead.id}]</span>
-                      <button 
-                        onClick={() => { setSelectedLead(lead); setShowEditModal(true); }}
-                        className="text-blue-500 hover:underline font-medium"
-                      >
-                        [Modifier]
-                      </button>
+                      <button onClick={() => { setSelectedLead(lead); setShowEditModal(true); }} className="text-blue-500 hover:underline">[Modifier]</button>
                     </div>
                   </div>
                 ))}
-                {getLeadsByStatus(colonne.id).length === 0 && (
-                  <div className="text-center text-sm text-gray-400 py-4 italic pointer-events-none">Déposez un lead ici</div>
-                )}
               </div>
             </div>
           ))}

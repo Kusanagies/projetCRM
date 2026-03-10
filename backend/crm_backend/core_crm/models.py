@@ -79,3 +79,26 @@ class UserProfile(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.get_role_display()}"
+
+class Tache(models.Model):
+    TYPE_CHOICES = [
+        ('APPEL', 'Appel téléphonique'),
+        ('RDV', 'Rendez-vous'),
+        ('EMAIL', 'Email à envoyer'),
+        ('RAPPEL', 'Rappel général'),
+    ]
+    
+    titre = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    type_tache = models.CharField(max_length=20, choices=TYPE_CHOICES, default='RAPPEL')
+    date_echeance = models.DateTimeField()
+    est_terminee = models.BooleanField(default=False)
+    
+    # Liens optionnels mais très utiles
+    contact = models.ForeignKey(Contact, on_delete=models.CASCADE, related_name='taches', null=True, blank=True)
+    commercial = models.ForeignKey(User, on_delete=models.CASCADE, related_name='taches_assignees')
+    
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.type_tache} - {self.titre} ({self.date_echeance})"

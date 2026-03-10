@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Entreprise, Contact, Lead, AutomationRule, UserProfile
+from .models import Entreprise, Contact, Lead, AutomationRule, UserProfile, Tache
 from django.contrib.auth.models import User
 
 class EntrepriseSerializer(serializers.ModelSerializer):
@@ -61,3 +61,13 @@ class RegisterSerializer(serializers.ModelSerializer):
         # On lui attache son rôle
         UserProfile.objects.create(user=user, role=role)
         return user
+
+class TacheSerializer(serializers.ModelSerializer):
+    nom_contact = serializers.CharField(source='contact.nom', read_only=True)
+    nom_commercial = serializers.CharField(source='commercial.username', read_only=True)
+
+    class Meta:
+        model = Tache
+        fields = '__all__'
+        read_only_fields = ['commercial']
+        

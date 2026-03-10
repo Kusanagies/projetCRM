@@ -9,8 +9,8 @@ from rest_framework.permissions import AllowAny
 from django.contrib.auth.models import User
 from .serializers import RegisterSerializer, UserSerializer
 
-from .models import Entreprise, Contact, Lead, AutomationRule
-from .serializers import EntrepriseSerializer, ContactSerializer, LeadSerializer, AutomationRuleSerializer
+from .models import Entreprise, Contact, Lead, AutomationRule, Tache
+from .serializers import EntrepriseSerializer, ContactSerializer, LeadSerializer, AutomationRuleSerializer, TacheSerializer
 from .utils import envoyer_email_bienvenue, envoyer_email_automatique, get_brevo_stats
 
 class EntrepriseViewSet(viewsets.ModelViewSet):
@@ -73,6 +73,16 @@ class LeadViewSet(viewsets.ModelViewSet):
                     except Exception as e:
                         print(f"[Erreur] Email auto échoué : {e}")
 
+                        
+class TacheViewSet(viewsets.ModelViewSet):
+    queryset = Tache.objects.all().order_by('date_echeance')
+    serializer_class = TacheSerializer
+    permission_classes = [IsAuthenticated]
+
+    # Quand un utilisateur crée une tâche, on lui assigne automatiquement
+    def perform_create(self, serializer):
+        serializer.save(commercial=self.request.user)
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def dashboard_stats(request):
@@ -101,4 +111,12 @@ class RegisterView(generics.CreateAPIView):
 @permission_classes([IsAuthenticated])
 def current_user(request):
     serializer = UserSerializer(request.user)
+    return Response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_commercials(request):
+    # On filtre les utilisateurs pour ne garder que ceux qui ont le rôle ADMIN ou COMMERCIAL
+    users = User.objects.filter(profile__role__in=['ADMIN', 'COMMERCIAL'])
+    serializer = UserSerializer(users, many=True)
     return Response(serializer.data)
