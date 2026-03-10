@@ -1,18 +1,21 @@
-from rest_framework import viewsets
-from rest_framework.permissions import IsAuthenticated
+import traceback
+import datetime
+from django.utils import timezone
+from django.db.models import Sum, Count, Avg, F
+from django.db.models.functions import TruncMonth
+
+from rest_framework import viewsets, generics
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
-from django.db.models import Sum
-
-from rest_framework import generics
-from rest_framework.permissions import AllowAny
 from django.contrib.auth.models import User
-from .serializers import RegisterSerializer, UserSerializer
 
-from .models import Entreprise, Contact, Lead, AutomationRule, Tache
-from .serializers import EntrepriseSerializer, ContactSerializer, LeadSerializer, AutomationRuleSerializer, TacheSerializer
+from .models import Entreprise, Contact, Lead, AutomationRule, Tache, UserProfile
+from .serializers import (
+    EntrepriseSerializer, ContactSerializer, LeadSerializer, 
+    AutomationRuleSerializer, TacheSerializer, UserSerializer, RegisterSerializer
+)
 from .utils import envoyer_email_bienvenue, envoyer_email_automatique, get_brevo_stats
-
 class EntrepriseViewSet(viewsets.ModelViewSet):
     queryset = Entreprise.objects.all()
     serializer_class = EntrepriseSerializer
@@ -120,3 +123,79 @@ def get_commercials(request):
     users = User.objects.filter(profile__role__in=['ADMIN', 'COMMERCIAL'])
     serializer = UserSerializer(users, many=True)
     return Response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def advanced_stats(request):
+    try:
+        # --- 1. KPIs GLOBAUX ---
+        # On force la conversion en float() pour que React puisse lire les chiffres
+        ca_total = Lead.objects.filter(statut='CONVERTI').aggregate(Sum('valeur_estimee'))['valeur_estimee__sum'] or 0
+        ca_total = float(ca_total)
+        
+        valeur_pipeline = Lead.objects.exclude(statut__in=['CONVERTI', 'PERDU']).aggregate(Sum('valeur_estimee'))['valeur_estimee__sum'] or 0
+        valeur_pipeline = float(valeur_pipeline)
+        
+        total_leads = Lead.objects.count()
+        leads_convertis = Lead.objects.filter(statut='CONVERTI').count()
+        taux_conversion = float(round((leads_convertis / total_leads * 100), 1)) if total_leads > 0 else 0.0
+        
+        panier_moyen = Lead.objects.filter(statut='CONVERTI').aggregate(Avg('valeur_estimee'))['valeur_estimee__avg'] or 0
+        panier_moyen = float(round(panier_moyen, 2))
+
+        # --- 2. GRAPHIQUES COMMERCIAUX ---
+        ca_par_commercial_qs = Lead.objects.filter(statut='CONVERTI', commercial_assigne__isnull=False).values(
+            nom=F('commercial_assigne__username')
+        ).annotate(CA=Sum('valeur_estimee'))
+        ca_par_commercial = [{'nom': item['nom'], 'CA': float(item['CA'] or 0)} for item in ca_par_commercial_qs]
+
+        pipeline_qs = Lead.objects.values('statut').annotate(value=Count('id'))
+        statut_mapping = {
+            'NOUVEAU': 'Prospect',
+            'EN_COURS': 'En cours',
+            'CONVERTI': 'Gagné',
+            'PERDU': 'Perdu'
+        }
+        pipeline_data = [{'name': statut_mapping.get(item['statut'], item['statut']), 'value': item['value']} for item in pipeline_qs]
+
+        evolution_qs = Lead.objects.filter(statut='CONVERTI').annotate(
+            month=TruncMonth('date_creation')
+        ).values('month').annotate(CA=Sum('valeur_estimee')).order_by('month')
+        
+        months_fr = {1: 'Jan', 2: 'Fév', 3: 'Mar', 4: 'Avr', 5: 'Mai', 6: 'Juin', 7: 'Jul', 8: 'Aoû', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Déc'}
+        evolution_ca = []
+        for item in evolution_qs:
+            if item['month']:
+                m = item['month'].month
+                evolution_ca.append({'mois': months_fr.get(m, str(m)), 'CA': float(item['CA'] or 0)})
+
+        # --- 3. STATISTIQUES CLIENTS ---
+        total_clients = Contact.objects.count()
+        
+        thirty_days_ago = timezone.now() - datetime.timedelta(days=30)
+        nouveaux_clients = Contact.objects.filter(date_ajout__gte=thirty_days_ago).count() 
+
+        return Response({
+            'kpis': {
+                'ca_total': ca_total,
+                'valeur_pipeline': valeur_pipeline,
+                'taux_conversion': taux_conversion,
+                'panier_moyen': panier_moyen,
+                'total_clients': total_clients,
+                'nouveaux_clients': nouveaux_clients
+            },
+            'ca_par_commercial': ca_par_commercial,
+            'pipeline_data': pipeline_data,
+            'evolution_ca': evolution_ca,
+            'segmentation_secteur': [
+                {'name': 'Tech & IT', 'value': 40},
+                {'name': 'Services', 'value': 30},
+                {'name': 'Commerce', 'value': 20},
+                {'name': 'Autre', 'value': 10}
+            ]
+        })
+
+    except Exception as e:
+        # En cas de crash, on renvoie une belle erreur JSON compréhensible !
+        print(f"Erreur Statistiques: {traceback.format_exc()}")
+        return Response({'erreur': str(e), 'details': traceback.format_exc()}, status=500)
