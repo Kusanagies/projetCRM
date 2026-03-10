@@ -4,6 +4,7 @@ from django.utils import timezone
 from django.db.models import Sum, Count, Avg, F
 from django.db.models.functions import TruncMonth
 
+from rest_framework.decorators import action
 from rest_framework import viewsets, generics
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.decorators import api_view, permission_classes
@@ -12,10 +13,10 @@ from django.contrib.auth.models import User
 from rest_framework.exceptions import PermissionDenied
 from .serializers import ManageUserSerializer
 
-from .models import Entreprise, Contact, Lead, AutomationRule, Tache, UserProfile
+from .models import Entreprise, Contact, Lead, AutomationRule, Tache, UserProfile, CampagneRecurrente
 from .serializers import (
     EntrepriseSerializer, ContactSerializer, LeadSerializer, 
-    AutomationRuleSerializer, TacheSerializer, UserSerializer, RegisterSerializer
+    AutomationRuleSerializer, TacheSerializer, UserSerializer, RegisterSerializer, CampagneRecurrenteSerializer
 )
 from .utils import envoyer_email_bienvenue, envoyer_email_automatique, get_brevo_stats
 class EntrepriseViewSet(viewsets.ModelViewSet):
@@ -215,3 +216,29 @@ class UserManagementViewSet(viewsets.ModelViewSet):
                 raise PermissionDenied("Accès refusé. Réservé aux administrateurs.")
         except:
             raise PermissionDenied("Profil introuvable.")
+
+class CampagneRecurrenteViewSet(viewsets.ModelViewSet):
+    queryset = CampagneRecurrente.objects.all()
+    serializer_class = CampagneRecurrenteSerializer
+    permission_classes = [IsAuthenticated]
+
+    @action(detail=True, methods=['post'])
+    def envoyer_maintenant(self, request, pk=None):
+        campagne = self.get_object()
+        
+        # On récupère tous les contacts qui ont une adresse email valide
+        contacts = Contact.objects.exclude(email__isnull=True).exclude(email__exact='')
+        emails_envoyes = 0
+        
+        for c in contacts:
+            # On personnalise le message pour chaque client
+            msg_perso = campagne.message.replace('{{contact.nom}}', c.nom)
+            sujet_perso = campagne.sujet.replace('{{contact.nom}}', c.nom)
+            
+            try:
+                envoyer_email_automatique(c.email, c.nom, sujet_perso, msg_perso)
+                emails_envoyes += 1
+            except Exception as e:
+                print(f"Erreur d'envoi pour {c.email}: {e}")
+                
+        return Response({'message': f'Campagne envoyée avec succès à {emails_envoyes} contacts !'})

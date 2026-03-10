@@ -11,7 +11,8 @@ from .views import (
     RegisterView,
     current_user,
     get_commercials,
-    UserManagementViewSet
+    UserManagementViewSet,
+    CampagneRecurrenteViewSet
 )
 
 # 1. Le routeur automatique pour les CRUD (Créer, Lire, Modifier, Supprimer)
@@ -22,6 +23,7 @@ router.register(r'leads', LeadViewSet)
 router.register(r'automations', AutomationRuleViewSet)
 router.register(r'taches', TacheViewSet)
 router.register(r'equipe', UserManagementViewSet, basename='equipe')
+router.register(r'campagnes', CampagneRecurrenteViewSet)
 
 # 2. Les routes manuelles (pour nos fonctions spéciales)
 urlpatterns = [

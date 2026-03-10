@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Entreprise, Contact, Lead, AutomationRule, UserProfile, Tache
+from .models import Entreprise, Contact, Lead, AutomationRule, UserProfile, Tache, CampagneRecurrente
 from django.contrib.auth.models import User
 
 class EntrepriseSerializer(serializers.ModelSerializer):
@@ -95,3 +95,8 @@ class ManageUserSerializer(serializers.ModelSerializer):
             profile.save()
 
         return instance
+
+class CampagneRecurrenteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CampagneRecurrente
+        fields = '__all__'

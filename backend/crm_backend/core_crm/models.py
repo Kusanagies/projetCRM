@@ -102,3 +102,19 @@ class Tache(models.Model):
 
     def __str__(self):
         return f"{self.type_tache} - {self.titre} ({self.date_echeance})"
+
+class CampagneRecurrente(models.Model):
+    FREQUENCE_CHOICES = [
+        ('HEBDO', 'Chaque Semaine'),
+        ('MENSUEL', 'Chaque Mois'),
+    ]
+    
+    titre = models.CharField(max_length=255, help_text="Ex: Newsletter Mensuelle")
+    sujet = models.CharField(max_length=255)
+    message = models.TextField()
+    frequence = models.CharField(max_length=20, choices=FREQUENCE_CHOICES)
+    actif = models.BooleanField(default=True)
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.titre
